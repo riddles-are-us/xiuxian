@@ -1,5 +1,6 @@
 use crate::task::{Task, TaskType, GatheringTask, CombatTask, ExplorationTask, AuxiliaryTask};
 use crate::disciple::TalentType;
+use serde::Serialize;
 
 /// 地图元素类型
 #[derive(Debug, Clone)]
@@ -9,6 +10,20 @@ pub enum MapElement {
     DangerousLocation(DangerousLocation),
     SecretRealm(SecretRealm),
     Monster(Monster),
+}
+
+/// 地图坐标
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct Position {
+    pub x: i32,
+    pub y: i32,
+}
+
+/// 带坐标的地图元素
+#[derive(Debug, Clone)]
+pub struct PositionedElement {
+    pub element: MapElement,
+    pub position: Position,
 }
 
 impl MapElement {
@@ -246,57 +261,79 @@ impl Monster {
 /// 游戏地图
 #[derive(Debug)]
 pub struct GameMap {
-    pub elements: Vec<MapElement>,
+    pub elements: Vec<PositionedElement>,
+    pub width: i32,
+    pub height: i32,
 }
 
 impl GameMap {
     pub fn new() -> Self {
         Self {
             elements: Vec::new(),
+            width: 20,  // 地图宽度
+            height: 20, // 地图高度
         }
     }
 
     /// 初始化地图
     pub fn initialize(&mut self) {
         // 添加初始村庄
-        self.elements.push(MapElement::Village(Village {
-            name: "清风镇".to_string(),
-            population: 1000,
-            prosperity: 50,
-        }));
+        self.elements.push(PositionedElement {
+            element: MapElement::Village(Village {
+                name: "清风镇".to_string(),
+                population: 1000,
+                prosperity: 50,
+            }),
+            position: Position { x: 5, y: 5 },
+        });
 
-        self.elements.push(MapElement::Village(Village {
-            name: "灵泉村".to_string(),
-            population: 500,
-            prosperity: 30,
-        }));
+        self.elements.push(PositionedElement {
+            element: MapElement::Village(Village {
+                name: "灵泉村".to_string(),
+                population: 500,
+                prosperity: 30,
+            }),
+            position: Position { x: 15, y: 8 },
+        });
 
         // 添加初始势力
-        self.elements.push(MapElement::Faction(Faction {
-            name: "青云派".to_string(),
-            power_level: 3,
-            relationship: 20,
-        }));
+        self.elements.push(PositionedElement {
+            element: MapElement::Faction(Faction {
+                name: "青云派".to_string(),
+                power_level: 3,
+                relationship: 20,
+            }),
+            position: Position { x: 10, y: 10 },
+        });
 
         // 添加险要之地
-        self.elements.push(MapElement::DangerousLocation(DangerousLocation {
-            name: "迷雾森林".to_string(),
-            danger_level: 20,
-        }));
+        self.elements.push(PositionedElement {
+            element: MapElement::DangerousLocation(DangerousLocation {
+                name: "迷雾森林".to_string(),
+                danger_level: 20,
+            }),
+            position: Position { x: 3, y: 15 },
+        });
 
         // 添加秘境
-        self.elements.push(MapElement::SecretRealm(SecretRealm {
-            name: "火焰洞窟".to_string(),
-            realm_type: TalentType::Fire,
-            difficulty: 30,
-        }));
+        self.elements.push(PositionedElement {
+            element: MapElement::SecretRealm(SecretRealm {
+                name: "火焰洞窟".to_string(),
+                realm_type: TalentType::Fire,
+                difficulty: 30,
+            }),
+            position: Position { x: 17, y: 3 },
+        });
 
         // 添加初始怪物
-        self.elements.push(MapElement::Monster(Monster {
-            name: "噬魂虎".to_string(),
-            level: 2,
-            is_demon: false,
-        }));
+        self.elements.push(PositionedElement {
+            element: MapElement::Monster(Monster {
+                name: "噬魂虎".to_string(),
+                level: 2,
+                is_demon: false,
+            }),
+            position: Position { x: 8, y: 12 },
+        });
     }
 
     /// 获取所有可用任务
@@ -304,8 +341,8 @@ impl GameMap {
         let mut tasks = Vec::new();
         let mut task_id = 0;
 
-        for element in &self.elements {
-            let element_tasks = element.generate_tasks(task_id);
+        for positioned in &self.elements {
+            let element_tasks = positioned.element.generate_tasks(task_id);
             task_id += element_tasks.len();
             tasks.extend(element_tasks);
         }
@@ -317,7 +354,7 @@ impl GameMap {
     pub fn calculate_income(&self, reputation: i32) -> u32 {
         self.elements
             .iter()
-            .map(|e| e.get_resource_income(reputation))
+            .map(|positioned| positioned.element.get_resource_income(reputation))
             .sum()
     }
 
@@ -327,8 +364,8 @@ impl GameMap {
         let mut rng = rand::thread_rng();
 
         // 怪物可能成长
-        for element in &mut self.elements {
-            if let MapElement::Monster(monster) = element {
+        for positioned in &mut self.elements {
+            if let MapElement::Monster(monster) = &mut positioned.element {
                 if rng.gen_bool(0.1) {
                     // 10%概率成长
                     monster.grow();
@@ -339,18 +376,25 @@ impl GameMap {
         // 可能出现新的怪物
         if rng.gen_bool(0.2) {
             // 20%概率
-            self.elements.push(MapElement::Monster(Monster {
-                name: format!("妖兽{}", rng.gen_range(1..100)),
-                level: rng.gen_range(1..5),
-                is_demon: false,
-            }));
+            // 随机位置
+            let x = rng.gen_range(0..self.width);
+            let y = rng.gen_range(0..self.height);
+
+            self.elements.push(PositionedElement {
+                element: MapElement::Monster(Monster {
+                    name: format!("妖兽{}", rng.gen_range(1..100)),
+                    level: rng.gen_range(1..5),
+                    is_demon: false,
+                }),
+                position: Position { x, y },
+            });
         }
     }
 
     /// 检查是否有怪物成魔
     pub fn has_demon(&self) -> bool {
-        self.elements.iter().any(|e| {
-            if let MapElement::Monster(m) = e {
+        self.elements.iter().any(|positioned| {
+            if let MapElement::Monster(m) = &positioned.element {
                 m.is_demon
             } else {
                 false

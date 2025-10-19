@@ -293,3 +293,36 @@ pub struct TribulationResponse {
     pub new_level: Option<String>,
     pub message: String,
 }
+
+/// 地图元素DTO
+#[derive(Debug, Serialize, Clone)]
+pub struct MapElementDto {
+    pub element_type: String,
+    pub name: String,
+    pub position: PositionDto,
+    pub details: MapElementDetails,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct PositionDto {
+    pub x: i32,
+    pub y: i32,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(tag = "type")]
+pub enum MapElementDetails {
+    Village { population: u32, prosperity: u32 },
+    Faction { power_level: u32, relationship: i32 },
+    DangerousLocation { danger_level: u32 },
+    SecretRealm { realm_type: String, difficulty: u32 },
+    Monster { level: u32, is_demon: bool },
+}
+
+/// 地图数据响应
+#[derive(Debug, Serialize)]
+pub struct MapDataResponse {
+    pub width: i32,
+    pub height: i32,
+    pub elements: Vec<MapElementDto>,
+}

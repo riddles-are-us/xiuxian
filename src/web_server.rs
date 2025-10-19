@@ -69,6 +69,9 @@ pub fn create_router() -> Router {
         // 统计信息
         .route("/api/game/:game_id/statistics", get(get_statistics))
 
+        // 地图
+        .route("/api/game/:game_id/map", get(get_map))
+
         // 渡劫
         .route("/api/game/:game_id/tribulation/candidates", get(get_tribulation_candidates))
         .route("/api/game/:game_id/tribulation", post(execute_tribulation))
@@ -557,6 +560,91 @@ async fn execute_tribulation(
         (
             StatusCode::NOT_FOUND,
             Json(ApiResponse::<TribulationResponse>::error(
+                "GAME_NOT_FOUND".to_string(),
+                "游戏不存在".to_string(),
+            )),
+        )
+    }
+}
+
+/// 获取地图数据
+async fn get_map(
+    State(store): State<AppState>,
+    Path(game_id): Path<String>,
+) -> impl IntoResponse {
+    if let Some(game_mutex) = store.get_game(&game_id) {
+        let game = game_mutex.lock().await;
+
+        use crate::map::MapElement;
+
+        let elements: Vec<MapElementDto> = game.map.elements
+            .iter()
+            .map(|positioned| {
+                let (element_type, name, details) = match &positioned.element {
+                    MapElement::Village(v) => (
+                        "Village".to_string(),
+                        v.name.clone(),
+                        MapElementDetails::Village {
+                            population: v.population,
+                            prosperity: v.prosperity,
+                        },
+                    ),
+                    MapElement::Faction(f) => (
+                        "Faction".to_string(),
+                        f.name.clone(),
+                        MapElementDetails::Faction {
+                            power_level: f.power_level,
+                            relationship: f.relationship,
+                        },
+                    ),
+                    MapElement::DangerousLocation(d) => (
+                        "DangerousLocation".to_string(),
+                        d.name.clone(),
+                        MapElementDetails::DangerousLocation {
+                            danger_level: d.danger_level,
+                        },
+                    ),
+                    MapElement::SecretRealm(s) => (
+                        "SecretRealm".to_string(),
+                        s.name.clone(),
+                        MapElementDetails::SecretRealm {
+                            realm_type: format!("{:?}", s.realm_type),
+                            difficulty: s.difficulty,
+                        },
+                    ),
+                    MapElement::Monster(m) => (
+                        "Monster".to_string(),
+                        m.name.clone(),
+                        MapElementDetails::Monster {
+                            level: m.level,
+                            is_demon: m.is_demon,
+                        },
+                    ),
+                };
+
+                MapElementDto {
+                    element_type,
+                    name,
+                    position: PositionDto {
+                        x: positioned.position.x,
+                        y: positioned.position.y,
+                    },
+                    details,
+                }
+            })
+            .collect();
+
+        let response = MapDataResponse {
+            width: game.map.width,
+            height: game.map.height,
+            elements,
+        };
+
+        (StatusCode::OK, Json(ApiResponse::ok(response)))
+    } else {
+        (
+            StatusCode::NOT_FOUND,
+            Json(ApiResponse::<MapDataResponse>::error(
                 "GAME_NOT_FOUND".to_string(),
                 "游戏不存在".to_string(),
             )),

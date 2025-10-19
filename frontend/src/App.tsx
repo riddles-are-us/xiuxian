@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { gameApi, GameInfo, Disciple, Task } from './api/gameApi';
+import { gameApi, GameInfo, Disciple, Task, MapData } from './api/gameApi';
+import MapView from './MapView';
 import './App.css';
 
 function App() {
@@ -9,8 +10,10 @@ function App() {
   const [gameInfo, setGameInfo] = useState<GameInfo | null>(null);
   const [disciples, setDisciples] = useState<Disciple[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [mapData, setMapData] = useState<MapData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showMap, setShowMap] = useState(false);
 
   useEffect(() => {
     if (gameId) {
@@ -21,14 +24,16 @@ function App() {
   const loadGameData = async (id: string) => {
     try {
       setLoading(true);
-      const [info, disciplesList, tasksList] = await Promise.all([
+      const [info, disciplesList, tasksList, map] = await Promise.all([
         gameApi.getGame(id),
         gameApi.getDisciples(id),
-        gameApi.getTasks(id)
+        gameApi.getTasks(id),
+        gameApi.getMap(id)
       ]);
       setGameInfo(info);
       setDisciples(disciplesList);
       setTasks(tasksList);
+      setMapData(map);
       setError(null);
     } catch (err: any) {
       setError(err.message);
@@ -135,9 +140,18 @@ function App() {
         <button onClick={startNewTurn} className="btn-primary">开始新回合</button>
         <button onClick={autoAssign} className="btn-secondary">自动分配任务</button>
         <button onClick={endTurn} className="btn-warning">结束回合</button>
+        <button onClick={() => setShowMap(!showMap)} className="btn-primary">
+          {showMap ? '隐藏地图' : '显示地图'}
+        </button>
       </div>
 
       {error && <div className="error">{error}</div>}
+
+      {showMap && mapData && (
+        <div style={{ padding: '2rem', maxWidth: '1400px', margin: '0 auto' }}>
+          <MapView mapData={mapData} />
+        </div>
+      )}
 
       <div className="content">
         <div className="disciples-section">

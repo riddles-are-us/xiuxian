@@ -58,6 +58,33 @@ export interface Task {
   assigned_to: number | null;
 }
 
+export interface MapElement {
+  element_type: string;
+  name: string;
+  position: {
+    x: number;
+    y: number;
+  };
+  details: {
+    type: string;
+    population?: number;
+    prosperity?: number;
+    power_level?: number;
+    relationship?: number;
+    danger_level?: number;
+    realm_type?: string;
+    difficulty?: number;
+    level?: number;
+    is_demon?: boolean;
+  };
+}
+
+export interface MapData {
+  width: number;
+  height: number;
+  elements: MapElement[];
+}
+
 export const gameApi = {
   createGame: async (sectName: string) => {
     const response = await axios.post(`${API_BASE}/game/new`, {
@@ -117,6 +144,11 @@ export const gameApi = {
 
   getStatistics: async (gameId: string) => {
     const response = await axios.get(`${API_BASE}/game/${gameId}/statistics`);
+    return response.data.data;
+  },
+
+  getMap: async (gameId: string): Promise<MapData> => {
+    const response = await axios.get(`${API_BASE}/game/${gameId}/map`);
     return response.data.data;
   }
 };

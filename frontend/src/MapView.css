@@ -1,0 +1,201 @@
+.map-view-container {
+  display: flex;
+  gap: 1.5rem;
+  padding: 1rem;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.map-grid-wrapper {
+  flex: 1;
+  overflow: auto;
+  max-height: 600px;
+  border: 2px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 1rem;
+  background: #f7fafc;
+}
+
+.map-grid {
+  display: grid;
+  gap: 2px;
+  min-width: min-content;
+}
+
+.map-tile {
+  position: relative;
+  width: 50px;
+  height: 50px;
+  border: 1px solid #cbd5e0;
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background: white;
+  overflow: hidden;
+}
+
+.map-tile:hover {
+  transform: scale(1.1);
+  z-index: 10;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+.tile-empty {
+  background: #edf2f7;
+}
+
+.tile-empty:hover {
+  background: #e2e8f0;
+}
+
+.tile-village {
+  background: linear-gradient(135deg, #c6f6d5 0%, #9ae6b4 100%);
+  border-color: #48bb78;
+}
+
+.tile-faction {
+  background: linear-gradient(135deg, #fbd38d 0%, #f6ad55 100%);
+  border-color: #ed8936;
+}
+
+.tile-dangerous {
+  background: linear-gradient(135deg, #feb2b2 0%, #fc8181 100%);
+  border-color: #f56565;
+}
+
+.tile-secret {
+  background: linear-gradient(135deg, #d6bcfa 0%, #b794f4 100%);
+  border-color: #9f7aea;
+}
+
+.tile-monster {
+  background: linear-gradient(135deg, #fbb6ce 0%, #f687b3 100%);
+  border-color: #d53f8c;
+}
+
+.tile-hovered {
+  border-width: 2px;
+  border-color: #4299e1;
+}
+
+.tile-icon {
+  font-size: 1.5rem;
+  line-height: 1;
+  margin-bottom: 0.125rem;
+}
+
+.tile-coords {
+  font-size: 0.5rem;
+  color: #718096;
+  position: absolute;
+  bottom: 1px;
+  right: 2px;
+  line-height: 1;
+}
+
+.element-details-panel {
+  width: 320px;
+  background: white;
+  border: 2px solid #e2e8f0;
+  border-radius: 8px;
+  overflow: hidden;
+  max-height: 600px;
+  display: flex;
+  flex-direction: column;
+}
+
+.details-header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.details-header h3 {
+  margin: 0;
+  font-size: 1.125rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.close-btn {
+  background: transparent;
+  border: none;
+  color: white;
+  font-size: 1.5rem;
+  cursor: pointer;
+  padding: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+.close-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.details-body {
+  padding: 1rem;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.detail-row:last-child {
+  border-bottom: none;
+}
+
+.detail-label {
+  color: #718096;
+  font-weight: 500;
+  font-size: 0.875rem;
+}
+
+.detail-value {
+  color: #2d3748;
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+
+@media (max-width: 768px) {
+  .map-view-container {
+    flex-direction: column;
+  }
+
+  .element-details-panel {
+    width: 100%;
+    max-height: 400px;
+  }
+
+  .map-grid-wrapper {
+    max-height: 400px;
+  }
+
+  .map-tile {
+    width: 40px;
+    height: 40px;
+  }
+
+  .tile-icon {
+    font-size: 1.25rem;
+  }
+}
