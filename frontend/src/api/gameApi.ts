@@ -29,6 +29,15 @@ export interface Disciple {
     talent_type: string;
     level: number;
   }>;
+  heritage: {
+    name: string;
+    level: string;
+  } | null;
+  dao_companion: {
+    companion_id: number;
+    affinity: number;
+  } | null;
+  children_count: number;
   current_task: string | null;
 }
 

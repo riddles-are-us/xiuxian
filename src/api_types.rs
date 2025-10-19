@@ -75,6 +75,13 @@ impl From<&Sect> for SectDto {
     }
 }
 
+/// 道侣DTO
+#[derive(Debug, Serialize, Clone)]
+pub struct DaoCompanionDto {
+    pub companion_id: usize,
+    pub affinity: u32,
+}
+
 /// 弟子DTO
 #[derive(Debug, Serialize, Clone)]
 pub struct DiscipleDto {
@@ -87,6 +94,8 @@ pub struct DiscipleDto {
     pub dao_heart: u32,
     pub talents: Vec<TalentDto>,
     pub heritage: Option<HeritageDto>,
+    pub dao_companion: Option<DaoCompanionDto>,
+    pub children_count: usize,
     pub current_task: Option<String>,
 }
 
@@ -105,6 +114,11 @@ impl From<&Disciple> for DiscipleDto {
             dao_heart: disciple.dao_heart,
             talents: disciple.talents.iter().map(|t| t.into()).collect(),
             heritage: disciple.heritage.as_ref().map(|h| h.into()),
+            dao_companion: disciple.dao_companion.as_ref().map(|dc| DaoCompanionDto {
+                companion_id: dc.companion_id,
+                affinity: dc.affinity,
+            }),
+            children_count: disciple.children.len(),
             current_task: disciple.current_task.clone(),
         }
     }

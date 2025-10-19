@@ -145,14 +145,72 @@ function App() {
           <div className="disciples-grid">
             {disciples.map(d => (
               <div key={d.id} className="disciple-card">
-                <h3>{d.name}</h3>
-                <p>类型: {d.disciple_type}</p>
-                <p>修为: {d.cultivation.level} ({d.cultivation.progress}%)</p>
-                <p>道心: {d.dao_heart}</p>
-                <p>年龄: {d.age}/{d.lifespan}</p>
-                {d.current_task && (
-                  <p className="current-task">📋 {d.current_task}</p>
-                )}
+                <div className="disciple-header">
+                  <h3>{d.name}</h3>
+                  <span className="disciple-type-badge">{d.disciple_type}</span>
+                </div>
+
+                <div className="disciple-info">
+                  <div className="info-row">
+                    <span className="label">修为:</span>
+                    <span className="value">{d.cultivation.level} ({d.cultivation.progress}%)</span>
+                  </div>
+
+                  <div className="progress-bar">
+                    <div className="progress-fill" style={{width: `${d.cultivation.progress}%`}}></div>
+                  </div>
+
+                  <div className="info-row">
+                    <span className="label">道心:</span>
+                    <span className="value">{d.dao_heart}/100</span>
+                  </div>
+
+                  <div className="info-row">
+                    <span className="label">寿元:</span>
+                    <span className="value">{d.age}/{d.lifespan}岁</span>
+                  </div>
+
+                  {d.talents && d.talents.length > 0 && (
+                    <div className="talents-section">
+                      <span className="label">天赋:</span>
+                      <div className="talents">
+                        {d.talents.map((t, i) => (
+                          <span key={i} className="talent-badge">
+                            {t.talent_type} Lv.{t.level}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {d.heritage && (
+                    <div className="heritage-section">
+                      <span className="heritage-badge">
+                        📜 {d.heritage.name} ({d.heritage.level})
+                      </span>
+                    </div>
+                  )}
+
+                  {d.dao_companion && (
+                    <div className="companion-section">
+                      <span className="companion-badge">
+                        💑 道侣 (亲密度: {d.dao_companion.affinity})
+                      </span>
+                    </div>
+                  )}
+
+                  {d.children_count > 0 && (
+                    <div className="children-section">
+                      <span className="children-badge">
+                        👶 子女: {d.children_count}
+                      </span>
+                    </div>
+                  )}
+
+                  {d.current_task && (
+                    <div className="current-task">📋 {d.current_task}</div>
+                  )}
+                </div>
               </div>
             ))}
           </div>
