@@ -227,6 +227,39 @@ header {
   border-left: 3px solid #4299e1;
 }
 
+.task-name {
+  margin-bottom: 0.5rem;
+}
+
+.task-progress-container {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.task-progress-bar {
+  flex: 1;
+  height: 12px;
+  background: rgba(255, 255, 255, 0.6);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.task-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #4299e1 0%, #3182ce 100%);
+  transition: width 0.3s ease;
+  border-radius: 6px;
+}
+
+.task-progress-text {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #2c5282;
+  white-space: nowrap;
+}
+
 .tasks-list {
   display: flex;
   flex-direction: column;
@@ -239,11 +272,52 @@ header {
   border: 2px solid #e2e8f0;
   border-radius: 8px;
   padding: 1rem;
+  transition: border-color 0.3s;
+}
+
+.task-card:hover {
+  border-color: #cbd5e0;
+}
+
+.task-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 0.5rem;
 }
 
 .task-card h3 {
-  margin: 0 0 0.5rem 0;
+  margin: 0;
   color: #2d3748;
+  flex: 1;
+}
+
+.task-expiry {
+  font-size: 0.75rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  background: #e2e8f0;
+  color: #4a5568;
+  font-weight: 600;
+  white-space: nowrap;
+  margin-left: 0.5rem;
+}
+
+.task-expiry.urgent {
+  background: #fed7d7;
+  color: #c53030;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.task-duration {
+  font-size: 0.875rem;
+  color: #718096;
+  margin-bottom: 0.5rem;
 }
 
 .rewards {

@@ -56,6 +56,9 @@ pub struct Task {
     pub resource_reward: u32, // 完成后获得的资源
     pub reputation_reward: i32, // 完成后获得的声望
     pub dao_heart_impact: i32,  // 对道心的影响
+    pub duration: u32,          // 任务执行时间（回合数）
+    pub expiry_turns: u32,      // 任务失效时间（回合数）
+    pub created_turn: u32,      // 任务创建时的回合数
 }
 
 impl Task {
@@ -66,6 +69,15 @@ impl Task {
         progress_reward: u32,
         resource_reward: u32,
     ) -> Self {
+        // 根据任务类型设置默认执行时间
+        let duration = match &task_type {
+            TaskType::Gathering(_) => 1,      // 采集任务1回合
+            TaskType::Combat(_) => 2,         // 战斗任务2回合
+            TaskType::Exploration(_) => 3,    // 探索任务3回合
+            TaskType::Auxiliary(_) => 1,      // 辅助任务1回合
+            TaskType::Investment(_) => 4,     // 投资任务4回合
+        };
+
         Self {
             id,
             name,
@@ -74,7 +86,15 @@ impl Task {
             resource_reward,
             reputation_reward: 0,
             dao_heart_impact: 0,
+            duration,
+            expiry_turns: 5,  // 默认5回合后失效
+            created_turn: 0,   // 将在生成时设置
         }
+    }
+
+    /// 检查任务是否已失效
+    pub fn is_expired(&self, current_turn: u32) -> bool {
+        current_turn >= self.created_turn + self.expiry_turns
     }
 
     /// 检查弟子是否适合此任务

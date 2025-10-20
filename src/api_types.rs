@@ -97,6 +97,16 @@ pub struct DiscipleDto {
     pub dao_companion: Option<DaoCompanionDto>,
     pub children_count: usize,
     pub current_task: Option<String>,
+    pub current_task_info: Option<CurrentTaskInfo>,
+}
+
+/// 当前任务详情
+#[derive(Debug, Serialize, Clone)]
+pub struct CurrentTaskInfo {
+    pub task_id: usize,
+    pub task_name: String,
+    pub duration: u32,
+    pub progress: u32,
 }
 
 impl From<&Disciple> for DiscipleDto {
@@ -120,6 +130,7 @@ impl From<&Disciple> for DiscipleDto {
             }),
             children_count: disciple.children.len(),
             current_task: disciple.current_task.clone(),
+            current_task_info: None,  // 将在web_server中填充
         }
     }
 }
@@ -172,6 +183,11 @@ pub struct TaskDto {
     pub dao_heart_impact: i32,
     pub suitable_disciples: SuitableDisciples,
     pub assigned_to: Option<usize>,
+    pub duration: u32,           // 任务执行时间（回合数）
+    pub progress: u32,            // 当前执行进度（回合数）
+    pub expiry_turns: u32,        // 失效时间
+    pub created_turn: u32,        // 创建回合
+    pub remaining_turns: u32,     // 剩余回合数直到失效
 }
 
 #[derive(Debug, Serialize, Clone)]

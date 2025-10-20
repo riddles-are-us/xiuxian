@@ -170,11 +170,19 @@ async fn start_turn(
         ];
 
         // 获取任务和弟子
+        let current_turn = game.sect.year;
         let tasks: Vec<TaskDto> = game.current_tasks
             .iter()
-            .enumerate()
-            .map(|(i, task)| {
-                let assignment = &game.task_assignments[i];
+            .map(|task| {
+                let assignment = game.task_assignments.iter().find(|a| a.task_id == task.id);
+                let progress = assignment.map(|a| a.progress).unwrap_or(0);
+                let assigned_to = assignment.and_then(|a| a.disciple_id);
+                let remaining_turns = if task.created_turn + task.expiry_turns > current_turn {
+                    task.created_turn + task.expiry_turns - current_turn
+                } else {
+                    0
+                };
+
                 TaskDto {
                     id: task.id,
                     name: task.name.clone(),
@@ -189,7 +197,12 @@ async fn start_turn(
                         free: vec![],
                         busy: vec![],
                     },
-                    assigned_to: assignment.disciple_id,
+                    assigned_to,
+                    duration: task.duration,
+                    progress,
+                    expiry_turns: task.expiry_turns,
+                    created_turn: task.created_turn,
+                    remaining_turns,
                 }
             })
             .collect();
@@ -259,11 +272,26 @@ async fn get_disciples(
     if let Some(game_mutex) = store.get_game(&game_id) {
         let game = game_mutex.lock().await;
 
-        let disciples: Vec<DiscipleDto> = game.sect
+        let mut disciples: Vec<DiscipleDto> = game.sect
             .alive_disciples()
             .iter()
             .map(|d| (*d).into())
             .collect();
+
+        // 填充当前任务信息
+        for disciple_dto in &mut disciples {
+            // 查找弟子的任务分配
+            if let Some(assignment) = game.task_assignments.iter().find(|a| a.disciple_id == Some(disciple_dto.id)) {
+                if let Some(task) = game.current_tasks.iter().find(|t| t.id == assignment.task_id) {
+                    disciple_dto.current_task_info = Some(CurrentTaskInfo {
+                        task_id: task.id,
+                        task_name: task.name.clone(),
+                        duration: task.duration,
+                        progress: assignment.progress,
+                    });
+                }
+            }
+        }
 
         (StatusCode::OK, Json(ApiResponse::ok(disciples)))
     } else {
@@ -315,12 +343,20 @@ async fn get_tasks(
 ) -> impl IntoResponse {
     if let Some(game_mutex) = store.get_game(&game_id) {
         let game = game_mutex.lock().await;
+        let current_turn = game.sect.year;
 
         let tasks: Vec<TaskDto> = game.current_tasks
             .iter()
-            .enumerate()
-            .map(|(i, task)| {
-                let assignment = &game.task_assignments[i];
+            .map(|task| {
+                let assignment = game.task_assignments.iter().find(|a| a.task_id == task.id);
+                let progress = assignment.map(|a| a.progress).unwrap_or(0);
+                let assigned_to = assignment.and_then(|a| a.disciple_id);
+                let remaining_turns = if task.created_turn + task.expiry_turns > current_turn {
+                    task.created_turn + task.expiry_turns - current_turn
+                } else {
+                    0
+                };
+
                 TaskDto {
                     id: task.id,
                     name: task.name.clone(),
@@ -335,7 +371,12 @@ async fn get_tasks(
                         free: vec![],
                         busy: vec![],
                     },
-                    assigned_to: assignment.disciple_id,
+                    assigned_to,
+                    duration: task.duration,
+                    progress,
+                    expiry_turns: task.expiry_turns,
+                    created_turn: task.created_turn,
+                    remaining_turns,
                 }
             })
             .collect();

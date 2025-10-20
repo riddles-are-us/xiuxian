@@ -39,6 +39,12 @@ export interface Disciple {
   } | null;
   children_count: number;
   current_task: string | null;
+  current_task_info: {
+    task_id: number;
+    task_name: string;
+    duration: number;
+    progress: number;
+  } | null;
 }
 
 export interface Task {
@@ -56,6 +62,11 @@ export interface Task {
     busy: number[];
   };
   assigned_to: number | null;
+  duration: number;
+  progress: number;
+  expiry_turns: number;
+  created_turn: number;
+  remaining_turns: number;
 }
 
 export interface MapElement {

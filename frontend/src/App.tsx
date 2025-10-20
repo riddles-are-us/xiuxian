@@ -221,8 +221,21 @@ function App() {
                     </div>
                   )}
 
-                  {d.current_task && (
-                    <div className="current-task">📋 {d.current_task}</div>
+                  {d.current_task_info && (
+                    <div className="current-task">
+                      <div className="task-name">📋 {d.current_task_info.task_name}</div>
+                      <div className="task-progress-container">
+                        <div className="task-progress-bar">
+                          <div
+                            className="task-progress-fill"
+                            style={{width: `${(d.current_task_info.progress / d.current_task_info.duration) * 100}%`}}
+                          ></div>
+                        </div>
+                        <span className="task-progress-text">
+                          {d.current_task_info.progress}/{d.current_task_info.duration} 回合
+                        </span>
+                      </div>
+                    </div>
                   )}
                 </div>
               </div>
@@ -235,17 +248,40 @@ function App() {
           <div className="tasks-list">
             {tasks.map(t => (
               <div key={t.id} className="task-card">
-                <h3>{t.name}</h3>
+                <div className="task-header">
+                  <h3>{t.name}</h3>
+                  <span className={`task-expiry ${t.remaining_turns <= 2 ? 'urgent' : ''}`}>
+                    ⏰ {t.remaining_turns}回合后失效
+                  </span>
+                </div>
                 <p>{t.task_type}</p>
+                <div className="task-duration">
+                  ⏱️ 需要执行 {t.duration} 回合
+                </div>
                 <div className="rewards">
                   <span>修为+{t.rewards.progress}</span>
                   <span>资源+{t.rewards.resources}</span>
                   <span>声望+{t.rewards.reputation}</span>
                 </div>
                 {t.assigned_to ? (
-                  <p className="assigned">
-                    ✓ 已分配给 {disciples.find(d => d.id === t.assigned_to)?.name}
-                  </p>
+                  <div>
+                    <p className="assigned">
+                      ✓ 已分配给 {disciples.find(d => d.id === t.assigned_to)?.name}
+                    </p>
+                    {t.progress > 0 && (
+                      <div className="task-progress-container">
+                        <div className="task-progress-bar">
+                          <div
+                            className="task-progress-fill"
+                            style={{width: `${(t.progress / t.duration) * 100}%`}}
+                          ></div>
+                        </div>
+                        <span className="task-progress-text">
+                          进度: {t.progress}/{t.duration}
+                        </span>
+                      </div>
+                    )}
+                  </div>
                 ) : (
                   <div className="assign-buttons">
                     {disciples

@@ -15,10 +15,12 @@ pub enum GameState {
 }
 
 /// 回合中的任务分配
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TaskAssignment {
     pub task_id: usize,
     pub disciple_id: Option<usize>,
+    pub started_turn: Option<u32>,  // 任务开始的回合数
+    pub progress: u32,               // 已执行的回合数
 }
 
 /// 交互式游戏
@@ -96,16 +98,28 @@ impl InteractiveGame {
         // 4. 检查突破
         self.check_breakthroughs();
 
-        // 5. 生成任务
-        self.current_tasks = self.map.get_available_tasks();
-        self.task_assignments = self
-            .current_tasks
-            .iter()
-            .map(|t| TaskAssignment {
-                task_id: t.id,
-                disciple_id: None,
-            })
-            .collect();
+        // 5. 清理过期任务
+        self.remove_expired_tasks();
+
+        // 6. 生成新任务
+        let mut new_tasks = self.map.get_available_tasks();
+        for task in &mut new_tasks {
+            task.created_turn = self.sect.year;
+        }
+        self.current_tasks.extend(new_tasks);
+
+        // 初始化新任务的分配记录
+        let existing_task_ids: Vec<usize> = self.task_assignments.iter().map(|a| a.task_id).collect();
+        for task in &self.current_tasks {
+            if !existing_task_ids.contains(&task.id) {
+                self.task_assignments.push(TaskAssignment {
+                    task_id: task.id,
+                    disciple_id: None,
+                    started_turn: None,
+                    progress: 0,
+                });
+            }
+        }
 
         // 6. 地图更新
         self.map.update();
@@ -440,22 +454,42 @@ impl InteractiveGame {
             UI::print_title("任务执行结果");
         }
 
-        // 先收集要执行的任务和弟子ID
-        let mut tasks_to_execute = Vec::new();
-        for assignment in &self.task_assignments {
+        // 更新任务进度并收集完成的任务
+        let mut completed_tasks = Vec::new();
+
+        for assignment in &mut self.task_assignments {
             if let Some(disciple_id) = assignment.disciple_id {
-                if let Some(task) = self.current_tasks.iter().find(|t| t.id == assignment.task_id)
-                {
-                    tasks_to_execute.push((disciple_id, task.clone()));
+                // 如果任务刚开始，设置开始回合
+                if assignment.started_turn.is_none() {
+                    assignment.started_turn = Some(self.sect.year);
+                }
+
+                // 增加进度
+                assignment.progress += 1;
+
+                // 检查任务是否完成
+                if let Some(task) = self.current_tasks.iter().find(|t| t.id == assignment.task_id) {
+                    if assignment.progress >= task.duration {
+                        completed_tasks.push((disciple_id, task.clone()));
+                    }
                 }
             }
         }
 
-        // 执行任务
+        // 执行完成的任务
         let mut results = Vec::new();
-        for (disciple_id, task) in tasks_to_execute {
-            let result = self.execute_single_task(disciple_id, task);
+        for (disciple_id, task) in completed_tasks {
+            let result = self.execute_single_task(disciple_id, task.clone());
             results.push(result);
+
+            // 从当前任务中移除已完成的任务
+            self.current_tasks.retain(|t| t.id != task.id);
+            self.task_assignments.retain(|a| a.task_id != task.id);
+
+            // 清除弟子的current_task
+            if let Some(disciple) = self.sect.disciples.iter_mut().find(|d| d.id == disciple_id) {
+                disciple.current_task = None;
+            }
         }
 
         // 处理结果
@@ -598,6 +632,42 @@ impl InteractiveGame {
     }
 
     /// 检查游戏状态
+    /// 移除过期任务
+    fn remove_expired_tasks(&mut self) {
+        let current_turn = self.sect.year;
+        let expired_task_ids: Vec<usize> = self
+            .current_tasks
+            .iter()
+            .filter(|t| t.is_expired(current_turn))
+            .map(|t| t.id)
+            .collect();
+
+        if !expired_task_ids.is_empty() {
+            if !self.is_web_mode {
+                UI::warning(&format!("⏰ {} 个任务已过期", expired_task_ids.len()));
+            }
+
+            // 移除过期任务
+            self.current_tasks
+                .retain(|t| !expired_task_ids.contains(&t.id));
+            self.task_assignments
+                .retain(|a| !expired_task_ids.contains(&a.task_id));
+
+            // 清除正在执行过期任务的弟子的current_task
+            for task_id in expired_task_ids {
+                for disciple in &mut self.sect.disciples {
+                    if let Some(ref task_name) = disciple.current_task {
+                        if let Some(task) = self.current_tasks.iter().find(|t| t.id == task_id) {
+                            if &task.name == task_name {
+                                disciple.current_task = None;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     pub fn check_game_state(&mut self) -> bool {
         // 检查是否成为仙门
         if self.sect.check_immortal_sect() {
