@@ -218,13 +218,17 @@ impl InteractiveGame {
         }
 
         for (i, task) in self.current_tasks.iter().enumerate() {
-            let assignment = &self.task_assignments[i];
+            let assignment = self.task_assignments.iter().find(|a| a.task_id == task.id);
 
             print!("\n[{}] {} ", i + 1, task.name);
 
-            if let Some(disciple_id) = assignment.disciple_id {
-                if let Some(disciple) = self.sect.disciples.iter().find(|d| d.id == disciple_id) {
-                    println!("✓ 已分配给: {}", disciple.name);
+            if let Some(assignment) = assignment {
+                if let Some(disciple_id) = assignment.disciple_id {
+                    if let Some(disciple) = self.sect.disciples.iter().find(|d| d.id == disciple_id) {
+                        println!("✓ 已分配给: {}", disciple.name);
+                    }
+                } else {
+                    println!("⭕ 未分配");
                 }
             } else {
                 println!("⭕ 未分配");
@@ -306,7 +310,8 @@ impl InteractiveGame {
         // 选择任务
         println!("\n选择要分配的任务:");
         for (i, task) in self.current_tasks.iter().enumerate() {
-            let status = if self.task_assignments[i].disciple_id.is_some() {
+            let assignment = self.task_assignments.iter().find(|a| a.task_id == task.id);
+            let status = if assignment.and_then(|a| a.disciple_id).is_some() {
                 "✓"
             } else {
                 "⭕"
@@ -365,7 +370,11 @@ impl InteractiveGame {
         }
 
         let (_, selected_disciple) = suitable[disciple_choice.unwrap() - 1];
-        self.task_assignments[task_idx].disciple_id = Some(selected_disciple.id);
+
+        // 查找任务的分配记录并更新
+        if let Some(assignment) = self.task_assignments.iter_mut().find(|a| a.task_id == task.id) {
+            assignment.disciple_id = Some(selected_disciple.id);
+        }
 
         UI::success(&format!(
             "已将任务 [{}] 分配给 {}",
@@ -378,11 +387,16 @@ impl InteractiveGame {
     fn unassign_task(&mut self) {
         UI::print_subtitle("取消任务分配");
 
-        let assigned: Vec<(usize, &Task)> = self
+        let assigned: Vec<&Task> = self
             .current_tasks
             .iter()
-            .enumerate()
-            .filter(|(i, _)| self.task_assignments[*i].disciple_id.is_some())
+            .filter(|task| {
+                self.task_assignments
+                    .iter()
+                    .find(|a| a.task_id == task.id)
+                    .and_then(|a| a.disciple_id)
+                    .is_some()
+            })
             .collect();
 
         if assigned.is_empty() {
@@ -392,10 +406,13 @@ impl InteractiveGame {
         }
 
         println!("\n选择要取消的任务:");
-        for (i, (idx, task)) in assigned.iter().enumerate() {
-            if let Some(disciple_id) = self.task_assignments[*idx].disciple_id {
-                if let Some(d) = self.sect.disciples.iter().find(|d| d.id == disciple_id) {
-                    println!("  [{}] {} (执行者: {})", i + 1, task.name, d.name);
+        for (i, task) in assigned.iter().enumerate() {
+            let assignment = self.task_assignments.iter().find(|a| a.task_id == task.id);
+            if let Some(assignment) = assignment {
+                if let Some(disciple_id) = assignment.disciple_id {
+                    if let Some(d) = self.sect.disciples.iter().find(|d| d.id == disciple_id) {
+                        println!("  [{}] {} (执行者: {})", i + 1, task.name, d.name);
+                    }
                 }
             }
         }
@@ -405,8 +422,10 @@ impl InteractiveGame {
             return;
         }
 
-        let (task_idx, _) = assigned[choice.unwrap() - 1];
-        self.task_assignments[task_idx].disciple_id = None;
+        let selected_task = assigned[choice.unwrap() - 1];
+        if let Some(assignment) = self.task_assignments.iter_mut().find(|a| a.task_id == selected_task.id) {
+            assignment.disciple_id = None;
+        }
 
         UI::success("已取消任务分配");
         UI::wait_for_enter("\n按回车继续...");
@@ -416,27 +435,42 @@ impl InteractiveGame {
     pub fn auto_assign_remaining(&mut self) {
         let mut assigned_count = 0;
 
-        for i in 0..self.current_tasks.len() {
-            if self.task_assignments[i].disciple_id.is_some() {
-                continue;
+        // 收集需要分配的任务ID和弟子ID对
+        let mut assignments_to_make = Vec::new();
+
+        for task in &self.current_tasks {
+            // 查找该任务的分配记录
+            let assignment = self.task_assignments.iter().find(|a| a.task_id == task.id);
+
+            if let Some(assignment) = assignment {
+                if assignment.disciple_id.is_some() {
+                    continue; // 已分配，跳过
+                }
+
+                // 找到适合的且未被分配任务的弟子
+                let suitable: Vec<&Disciple> = self
+                    .sect
+                    .alive_disciples()
+                    .into_iter()
+                    .filter(|d| {
+                        task.is_suitable_for_disciple(d) &&
+                        // 确保该弟子还没有被分配任务
+                        !self.task_assignments.iter().any(|a| a.disciple_id == Some(d.id)) &&
+                        // 也不在待分配列表中
+                        !assignments_to_make.iter().any(|(_, did)| *did == d.id)
+                    })
+                    .collect();
+
+                if let Some(disciple) = suitable.first() {
+                    assignments_to_make.push((task.id, disciple.id));
+                }
             }
+        }
 
-            let task = &self.current_tasks[i];
-
-            // 找到适合的且未被分配任务的弟子
-            let suitable: Vec<&Disciple> = self
-                .sect
-                .alive_disciples()
-                .into_iter()
-                .filter(|d| {
-                    task.is_suitable_for_disciple(d) &&
-                    // 确保该弟子还没有被分配任务
-                    !self.task_assignments.iter().any(|a| a.disciple_id == Some(d.id))
-                })
-                .collect();
-
-            if let Some(disciple) = suitable.first() {
-                self.task_assignments[i].disciple_id = Some(disciple.id);
+        // 执行分配
+        for (task_id, disciple_id) in assignments_to_make {
+            if let Some(assignment) = self.task_assignments.iter_mut().find(|a| a.task_id == task_id) {
+                assignment.disciple_id = Some(disciple_id);
                 assigned_count += 1;
             }
         }
