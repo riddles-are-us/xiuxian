@@ -100,6 +100,19 @@ function App() {
     }
   };
 
+  const resetGame = () => {
+    const confirmed = window.confirm('确定要重置当前游戏吗？所有进度将被清除！');
+    if (confirmed) {
+      localStorage.removeItem('gameId');
+      setGameId(null);
+      setGameInfo(null);
+      setDisciples([]);
+      setTasks([]);
+      setMapData(null);
+      setError(null);
+    }
+  };
+
   if (loading) {
     return <div className="loading">加载中...</div>;
   }
@@ -164,6 +177,7 @@ function App() {
         <button onClick={() => setShowMap(!showMap)} className="btn-primary">
           {showMap ? '隐藏地图' : '显示地图'}
         </button>
+        <button onClick={resetGame} className="btn-warning">重置游戏</button>
       </div>
 
       {error && <div className="error">{error}</div>}
