@@ -69,6 +69,11 @@ impl InteractiveGame {
         // 弟子年龄增长和寿元检查（这会增加年份）
         self.sect.yearly_update();
 
+        // 弟子自然恢复精力和体魄
+        for disciple in self.sect.alive_disciples_mut() {
+            disciple.natural_recovery();
+        }
+
         if !self.is_web_mode {
             UI::clear_screen();
             UI::print_title(&format!("第 {} 年", self.sect.year));
@@ -528,8 +533,14 @@ impl InteractiveGame {
                 // 增加进度
                 assignment.progress += 1;
 
-                // 检查任务是否完成
+                // 消耗精力和体魄（每回合）
                 if let Some(task) = self.current_tasks.iter().find(|t| t.id == assignment.task_id) {
+                    if let Some(disciple) = self.sect.disciples.iter_mut().find(|d| d.id == disciple_id) {
+                        disciple.consume_energy(task.energy_cost);
+                        disciple.consume_constitution(task.constitution_cost);
+                    }
+
+                    // 检查任务是否完成
                     if assignment.progress >= task.duration {
                         completed_tasks.push((disciple_id, task.clone()));
                     }

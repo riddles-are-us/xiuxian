@@ -79,6 +79,10 @@ pub fn create_router() -> Router {
         .route("/api/game/:game_id/tribulation/candidates", get(get_tribulation_candidates))
         .route("/api/game/:game_id/tribulation", post(execute_tribulation))
 
+        // 丹药
+        .route("/api/game/:game_id/pills", get(get_pill_inventory))
+        .route("/api/game/:game_id/pills/use", post(use_pill))
+
         .layer(CorsLayer::new()
             .allow_origin(Any)
             .allow_methods(Any)
@@ -215,6 +219,8 @@ async fn start_turn(
                     expiry_turns: task.expiry_turns,
                     created_turn: task.created_turn,
                     remaining_turns,
+                    energy_cost: task.energy_cost,
+                    constitution_cost: task.constitution_cost,
                 }
             })
             .collect();
@@ -389,6 +395,8 @@ async fn get_tasks(
                     expiry_turns: task.expiry_turns,
                     created_turn: task.created_turn,
                     remaining_turns,
+                    energy_cost: task.energy_cost,
+                    constitution_cost: task.constitution_cost,
                 }
             })
             .collect();
@@ -720,6 +728,143 @@ async fn get_map(
         (
             StatusCode::NOT_FOUND,
             Json(ApiResponse::<MapDataResponse>::error(
+                "GAME_NOT_FOUND".to_string(),
+                "游戏不存在".to_string(),
+            )),
+        )
+    }
+}
+
+/// 获取丹药库存
+async fn get_pill_inventory(
+    State(store): State<AppState>,
+    Path(game_id): Path<String>,
+) -> impl IntoResponse {
+    if let Some(game_mutex) = store.get_game(&game_id) {
+        let game = game_mutex.lock().await;
+
+        let mut pills = std::collections::HashMap::new();
+
+        use crate::pill::PillType;
+
+        for pill_type in [
+            PillType::QiRecovery,
+            PillType::BodyStrength,
+            PillType::VitalityElixir,
+            PillType::CultivationBoost,
+        ] {
+            let effects = pill_type.effects();
+            pills.insert(
+                pill_type.to_string().to_string(),
+                PillInfo {
+                    count: game.sect.pill_inventory.get_count(pill_type),
+                    name: pill_type.name().to_string(),
+                    description: pill_type.description().to_string(),
+                    energy_restore: effects.energy_restore,
+                    constitution_restore: effects.constitution_restore,
+                },
+            );
+        }
+
+        let response = PillInventoryResponse { pills };
+
+        (StatusCode::OK, Json(ApiResponse::ok(response)))
+    } else {
+        (
+            StatusCode::NOT_FOUND,
+            Json(ApiResponse::<PillInventoryResponse>::error(
+                "GAME_NOT_FOUND".to_string(),
+                "游戏不存在".to_string(),
+            )),
+        )
+    }
+}
+
+/// 给弟子服用丹药
+async fn use_pill(
+    State(store): State<AppState>,
+    Path(game_id): Path<String>,
+    Json(req): Json<UsePillRequest>,
+) -> impl IntoResponse {
+    if let Some(game_mutex) = store.get_game(&game_id) {
+        let mut game = game_mutex.lock().await;
+
+        use crate::pill::PillType;
+
+        // 解析丹药类型
+        let pill_type = match PillType::from_str(&req.pill_type) {
+            Some(pt) => pt,
+            None => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(ApiResponse::<UsePillResponse>::error(
+                        "INVALID_PILL_TYPE".to_string(),
+                        "无效的丹药类型".to_string(),
+                    )),
+                );
+            }
+        };
+
+        // 检查库存
+        if game.sect.pill_inventory.get_count(pill_type) == 0 {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(ApiResponse::<UsePillResponse>::error(
+                    "NO_PILLS".to_string(),
+                    format!("{}库存不足", pill_type.name()),
+                )),
+            );
+        }
+
+        // 查找弟子
+        let disciple_index = game.sect.disciples.iter().position(|d| d.id == req.disciple_id);
+
+        if let Some(index) = disciple_index {
+            // 消耗丹药
+            if !game.sect.pill_inventory.consume(pill_type) {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(ApiResponse::<UsePillResponse>::error(
+                        "NO_PILLS".to_string(),
+                        format!("{}库存不足", pill_type.name()),
+                    )),
+                );
+            }
+
+            let disciple = &mut game.sect.disciples[index];
+            let name = disciple.name.clone();
+            let energy_before = disciple.energy;
+            let constitution_before = disciple.constitution;
+
+            // 应用效果
+            let effects = pill_type.effects();
+            disciple.restore_energy(effects.energy_restore);
+            disciple.restore_constitution(effects.constitution_restore);
+
+            let response = UsePillResponse {
+                success: true,
+                message: format!("{}服用了{}", name, pill_type.name()),
+                disciple_name: name,
+                energy_before,
+                energy_after: disciple.energy,
+                constitution_before,
+                constitution_after: disciple.constitution,
+            };
+
+            (StatusCode::OK, Json(ApiResponse::ok(response)))
+        } else {
+            (
+                StatusCode::NOT_FOUND,
+                Json(ApiResponse::<UsePillResponse>::error(
+                    "DISCIPLE_NOT_FOUND".to_string(),
+                    "弟子不存在".to_string(),
+                )),
+            )
+        }
+    } else {
+        (
+            StatusCode::NOT_FOUND,
+            Json(ApiResponse::<UsePillResponse>::error(
                 "GAME_NOT_FOUND".to_string(),
                 "游戏不存在".to_string(),
             )),

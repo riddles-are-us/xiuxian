@@ -1,5 +1,6 @@
 use crate::disciple::{Disciple, DiscipleType, Heritage};
 use crate::cultivation::CultivationLevel;
+use crate::pill::PillInventory;
 
 /// 宗门
 #[derive(Debug)]
@@ -11,6 +12,7 @@ pub struct Sect {
     pub is_immortal_sect: bool,
     pub heritages: Vec<Heritage>, // 传承库
     pub year: u32, // 当前年份
+    pub pill_inventory: PillInventory, // 丹药库存
 }
 
 impl Sect {
@@ -23,6 +25,7 @@ impl Sect {
             is_immortal_sect: false,
             heritages: Vec::new(),
             year: 0,
+            pill_inventory: PillInventory::new(),
         }
     }
 

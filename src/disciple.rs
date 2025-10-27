@@ -130,6 +130,8 @@ pub struct Disciple {
     pub age: u32,
     pub lifespan: u32,
     pub dao_heart: u32,  // 道心 0-100
+    pub energy: u32,     // 精力 0-100
+    pub constitution: u32, // 体魄 0-100
     pub heritage: Option<Heritage>,
     pub dao_companion: Option<DaoCompanion>,
     pub children: Vec<usize>, // 子女ID列表
@@ -149,6 +151,8 @@ impl Disciple {
             age: 16,
             lifespan,
             dao_heart: 50,
+            energy: 100,        // 初始精力满值
+            constitution: 100,  // 初始体魄满值
             heritage: None,
             dao_companion: None,
             children: Vec::new(),
@@ -158,7 +162,7 @@ impl Disciple {
 
     /// 是否存活
     pub fn is_alive(&self) -> bool {
-        self.age < self.lifespan
+        self.age < self.lifespan && self.constitution > 0
     }
 
     /// 是否达到仙道
@@ -262,6 +266,52 @@ impl Disciple {
         }
 
         actual_progress
+    }
+
+    /// 消耗精力
+    pub fn consume_energy(&mut self, amount: u32) {
+        if self.energy >= amount {
+            self.energy -= amount;
+        } else {
+            self.energy = 0;
+        }
+
+        // 如果精力降到0，减少1年寿命
+        if self.energy == 0 && self.lifespan > 0 {
+            self.lifespan = self.lifespan.saturating_sub(1);
+            println!("   ⚠️ {}精力耗尽，寿命减少1年（剩余{}年）", self.name, self.lifespan - self.age);
+        }
+    }
+
+    /// 消耗体魄
+    pub fn consume_constitution(&mut self, amount: u32) {
+        if self.constitution >= amount {
+            self.constitution -= amount;
+        } else {
+            self.constitution = 0;
+        }
+
+        // 如果体魄降到0，弟子会死亡（在is_alive中检查）
+        if self.constitution == 0 {
+            println!("   💀 {}体魄耗尽，死亡", self.name);
+        }
+    }
+
+    /// 恢复精力
+    pub fn restore_energy(&mut self, amount: u32) {
+        self.energy = (self.energy + amount).min(100);
+    }
+
+    /// 恢复体魄
+    pub fn restore_constitution(&mut self, amount: u32) {
+        self.constitution = (self.constitution + amount).min(100);
+    }
+
+    /// 每回合自然恢复
+    pub fn natural_recovery(&mut self) {
+        // 每回合恢复5点精力和2点体魄
+        self.restore_energy(5);
+        self.restore_constitution(2);
     }
 
     /// 死亡后生成传承

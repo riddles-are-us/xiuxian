@@ -32,6 +32,8 @@ export interface Disciple {
   age: number;
   lifespan: number;
   dao_heart: number;
+  energy: number;            // 精力 0-100
+  constitution: number;      // 体魄 0-100
   talents: Array<{
     talent_type: string;
     level: number;
@@ -74,6 +76,8 @@ export interface Task {
   expiry_turns: number;
   created_turn: number;
   remaining_turns: number;
+  energy_cost: number;        // 精力消耗（每回合）
+  constitution_cost: number;   // 体魄消耗（每回合）
 }
 
 export interface MapElement {
@@ -106,6 +110,28 @@ export interface MapData {
 export interface VersionInfo {
   api_version: string;
   app_name: string;
+}
+
+export interface PillInfo {
+  count: number;
+  name: string;
+  description: string;
+  energy_restore: number;
+  constitution_restore: number;
+}
+
+export interface PillInventory {
+  pills: { [key: string]: PillInfo };
+}
+
+export interface UsePillResponse {
+  success: boolean;
+  message: string;
+  disciple_name: string;
+  energy_before: number;
+  energy_after: number;
+  constitution_before: number;
+  constitution_after: number;
 }
 
 export const gameApi = {
@@ -187,6 +213,19 @@ export const gameApi = {
     });
     // 再开始新回合
     const response = await axios.post(`${API_BASE}/game/${gameId}/turn/start`);
+    return response.data.data;
+  },
+
+  getPillInventory: async (gameId: string): Promise<PillInventory> => {
+    const response = await axios.get(`${API_BASE}/game/${gameId}/pills`);
+    return response.data.data;
+  },
+
+  usePill: async (gameId: string, discipleId: number, pillType: string): Promise<UsePillResponse> => {
+    const response = await axios.post(`${API_BASE}/game/${gameId}/pills/use`, {
+      disciple_id: discipleId,
+      pill_type: pillType
+    });
     return response.data.data;
   }
 };

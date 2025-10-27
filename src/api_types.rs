@@ -99,6 +99,8 @@ pub struct DiscipleDto {
     pub age: u32,
     pub lifespan: u32,
     pub dao_heart: u32,
+    pub energy: u32,        // 精力 0-100
+    pub constitution: u32,   // 体魄 0-100
     pub talents: Vec<TalentDto>,
     pub heritage: Option<HeritageDto>,
     pub dao_companion: Option<DaoCompanionDto>,
@@ -139,6 +141,8 @@ impl From<&Disciple> for DiscipleDto {
             age: disciple.age,
             lifespan: disciple.lifespan,
             dao_heart: disciple.dao_heart,
+            energy: disciple.energy,
+            constitution: disciple.constitution,
             talents: disciple.talents.iter().map(|t| t.into()).collect(),
             heritage: disciple.heritage.as_ref().map(|h| h.into()),
             dao_companion: disciple.dao_companion.as_ref().map(|dc| DaoCompanionDto {
@@ -215,6 +219,8 @@ pub struct TaskDto {
     pub expiry_turns: u32,        // 失效时间
     pub created_turn: u32,        // 创建回合
     pub remaining_turns: u32,     // 剩余回合数直到失效
+    pub energy_cost: u32,        // 精力消耗（每回合）
+    pub constitution_cost: u32,   // 体魄消耗（每回合）
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -368,4 +374,38 @@ pub struct MapDataResponse {
     pub width: i32,
     pub height: i32,
     pub elements: Vec<MapElementDto>,
+}
+
+/// 丹药库存响应
+#[derive(Debug, Serialize)]
+pub struct PillInventoryResponse {
+    pub pills: std::collections::HashMap<String, PillInfo>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PillInfo {
+    pub count: u32,
+    pub name: String,
+    pub description: String,
+    pub energy_restore: u32,
+    pub constitution_restore: u32,
+}
+
+/// 服用丹药请求
+#[derive(Debug, Deserialize)]
+pub struct UsePillRequest {
+    pub disciple_id: usize,
+    pub pill_type: String,
+}
+
+/// 服用丹药响应
+#[derive(Debug, Serialize)]
+pub struct UsePillResponse {
+    pub success: bool,
+    pub message: String,
+    pub disciple_name: String,
+    pub energy_before: u32,
+    pub energy_after: u32,
+    pub constitution_before: u32,
+    pub constitution_after: u32,
 }

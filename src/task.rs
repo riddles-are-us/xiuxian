@@ -59,6 +59,8 @@ pub struct Task {
     pub duration: u32,          // 任务执行时间（回合数）
     pub expiry_turns: u32,      // 任务失效时间（回合数）
     pub created_turn: u32,      // 任务创建时的回合数
+    pub energy_cost: u32,       // 精力消耗（每回合）
+    pub constitution_cost: u32, // 体魄消耗（每回合）
 }
 
 impl Task {
@@ -69,13 +71,13 @@ impl Task {
         progress_reward: u32,
         resource_reward: u32,
     ) -> Self {
-        // 根据任务类型设置默认执行时间
-        let duration = match &task_type {
-            TaskType::Gathering(_) => 1,      // 采集任务1回合
-            TaskType::Combat(_) => 2,         // 战斗任务2回合
-            TaskType::Exploration(_) => 3,    // 探索任务3回合
-            TaskType::Auxiliary(_) => 1,      // 辅助任务1回合
-            TaskType::Investment(_) => 4,     // 投资任务4回合
+        // 根据任务类型设置默认执行时间和消耗
+        let (duration, energy_cost, constitution_cost) = match &task_type {
+            TaskType::Gathering(_) => (1, 5, 2),      // 采集任务：1回合，消耗少
+            TaskType::Combat(_) => (2, 15, 10),        // 战斗任务：2回合，消耗大
+            TaskType::Exploration(_) => (3, 10, 5),    // 探索任务：3回合，中等消耗
+            TaskType::Auxiliary(_) => (1, 5, 3),       // 辅助任务：1回合，消耗少
+            TaskType::Investment(_) => (4, 3, 1),      // 投资任务：4回合，消耗很少
         };
 
         Self {
@@ -89,6 +91,8 @@ impl Task {
             duration,
             expiry_turns: 5,  // 默认5回合后失效
             created_turn: 0,   // 将在生成时设置
+            energy_cost,
+            constitution_cost,
         }
     }
 
@@ -103,13 +107,13 @@ impl Task {
         dao_heart_impact: i32,
         created_turn: u32,
     ) -> Self {
-        // 根据任务类型设置默认执行时间
-        let duration = match &task_type {
-            TaskType::Gathering(_) => 1,
-            TaskType::Combat(_) => 2,
-            TaskType::Exploration(_) => 3,
-            TaskType::Auxiliary(_) => 1,
-            TaskType::Investment(_) => 4,
+        // 根据任务类型设置默认执行时间和消耗
+        let (duration, energy_cost, constitution_cost) = match &task_type {
+            TaskType::Gathering(_) => (1, 5, 2),
+            TaskType::Combat(_) => (2, 15, 10),
+            TaskType::Exploration(_) => (3, 10, 5),
+            TaskType::Auxiliary(_) => (1, 5, 3),
+            TaskType::Investment(_) => (4, 3, 1),
         };
 
         Self {
@@ -123,6 +127,8 @@ impl Task {
             duration,
             expiry_turns: 20,  // 修炼路径任务有更长的失效时间
             created_turn,
+            energy_cost,
+            constitution_cost,
         }
     }
 

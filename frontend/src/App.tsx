@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { gameApi, GameInfo, Disciple, Task, MapData, VersionInfo } from './api/gameApi';
+import { gameApi, GameInfo, Disciple, Task, MapData, VersionInfo, PillInventory } from './api/gameApi';
 import MapView from './MapView';
 import APP_CONFIG from './config';
 import './App.css';
@@ -13,9 +13,11 @@ function App() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [mapData, setMapData] = useState<MapData | null>(null);
   const [serverVersion, setServerVersion] = useState<VersionInfo | null>(null);
+  const [pillInventory, setPillInventory] = useState<PillInventory | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showMap, setShowMap] = useState(false);
+  const [showPills, setShowPills] = useState(false);
 
   useEffect(() => {
     // Fetch server version on mount
@@ -31,16 +33,18 @@ function App() {
   const loadGameData = async (id: string) => {
     try {
       setLoading(true);
-      const [info, disciplesList, tasksList, map] = await Promise.all([
+      const [info, disciplesList, tasksList, map, pills] = await Promise.all([
         gameApi.getGame(id),
         gameApi.getDisciples(id),
         gameApi.getTasks(id),
-        gameApi.getMap(id)
+        gameApi.getMap(id),
+        gameApi.getPillInventory(id)
       ]);
       setGameInfo(info);
       setDisciples(disciplesList);
       setTasks(tasksList);
       setMapData(map);
+      setPillInventory(pills);
       setError(null);
     } catch (err: any) {
       setError(err.message);
@@ -113,6 +117,18 @@ function App() {
     }
   };
 
+  const givePillToDisciple = async (discipleId: number, pillType: string) => {
+    if (!gameId) return;
+    try {
+      const result = await gameApi.usePill(gameId, discipleId, pillType);
+      alert(result.message + `\n精力: ${result.energy_before} → ${result.energy_after}\n体魄: ${result.constitution_before} → ${result.constitution_after}`);
+      await loadGameData(gameId);
+    } catch (err: any) {
+      setError(err.message);
+      alert('服用丹药失败: ' + err.message);
+    }
+  };
+
   if (loading) {
     return <div className="loading">加载中...</div>;
   }
@@ -178,6 +194,9 @@ function App() {
           {showMap ? '隐藏地图' : '显示地图'}
         </button>
         <button onClick={resetGame} className="btn-warning">重置游戏</button>
+        <button onClick={() => setShowPills(!showPills)} className="btn-secondary">
+          {showPills ? '隐藏丹药' : '丹药库存'}
+        </button>
       </div>
 
       {error && <div className="error">{error}</div>}
@@ -185,6 +204,33 @@ function App() {
       {showMap && mapData && (
         <div style={{ padding: '2rem', maxWidth: '1400px', margin: '0 auto' }}>
           <MapView mapData={mapData} />
+        </div>
+      )}
+
+      {showPills && pillInventory && (
+        <div style={{ padding: '1rem', maxWidth: '1200px', margin: '0 auto' }}>
+          <h2 style={{ marginBottom: '1rem' }}>丹药库存</h2>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '1rem' }}>
+            {Object.entries(pillInventory.pills).map(([pillType, info]) => (
+              <div key={pillType} style={{
+                border: '1px solid #ddd',
+                borderRadius: '8px',
+                padding: '1rem',
+                backgroundColor: info.count > 0 ? '#f9f9f9' : '#eee'
+              }}>
+                <div style={{ fontSize: '1.2rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>
+                  {info.name} <span style={{ color: info.count > 0 ? '#2d7a3e' : '#999' }}>×{info.count}</span>
+                </div>
+                <div style={{ fontSize: '0.9rem', color: '#666', marginBottom: '0.5rem' }}>
+                  {info.description}
+                </div>
+                <div style={{ fontSize: '0.85rem', color: '#888' }}>
+                  {info.energy_restore > 0 && <div>恢复精力: +{info.energy_restore}</div>}
+                  {info.constitution_restore > 0 && <div>恢复体魄: +{info.constitution_restore}</div>}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
@@ -258,6 +304,32 @@ function App() {
                   </div>
 
                   <div className="info-row">
+                    <span className="label">精力:</span>
+                    <span className="value" style={{color: d.energy < 20 ? '#e53e3e' : d.energy < 50 ? '#dd6b20' : '#48bb78'}}>
+                      {d.energy}/100
+                    </span>
+                  </div>
+                  <div className="progress-bar">
+                    <div className="progress-fill" style={{
+                      width: `${d.energy}%`,
+                      background: d.energy < 20 ? '#e53e3e' : d.energy < 50 ? '#dd6b20' : '#48bb78'
+                    }}></div>
+                  </div>
+
+                  <div className="info-row">
+                    <span className="label">体魄:</span>
+                    <span className="value" style={{color: d.constitution < 20 ? '#e53e3e' : d.constitution < 50 ? '#dd6b20' : '#48bb78'}}>
+                      {d.constitution}/100
+                    </span>
+                  </div>
+                  <div className="progress-bar">
+                    <div className="progress-fill" style={{
+                      width: `${d.constitution}%`,
+                      background: d.constitution < 20 ? '#e53e3e' : d.constitution < 50 ? '#dd6b20' : '#48bb78'
+                    }}></div>
+                  </div>
+
+                  <div className="info-row">
                     <span className="label">寿元:</span>
                     <span className="value">{d.age}/{d.lifespan}岁</span>
                   </div>
@@ -315,6 +387,30 @@ function App() {
                       </div>
                     </div>
                   )}
+
+                  {pillInventory && (d.energy < 100 || d.constitution < 100) && (
+                    <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid #eee' }}>
+                      <div style={{ fontSize: '0.9rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>服用丹药</div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                        {Object.entries(pillInventory.pills)
+                          .filter(([_, info]) => info.count > 0)
+                          .map(([pillType, info]) => (
+                            <button
+                              key={pillType}
+                              onClick={() => givePillToDisciple(d.id, pillType)}
+                              className="btn-small"
+                              style={{
+                                fontSize: '0.8rem',
+                                padding: '0.3rem 0.6rem'
+                              }}
+                              title={info.description}
+                            >
+                              {info.name}
+                            </button>
+                          ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
@@ -340,6 +436,9 @@ function App() {
                   <span>修为+{t.rewards.progress}</span>
                   <span>资源+{t.rewards.resources}</span>
                   <span>声望+{t.rewards.reputation}</span>
+                </div>
+                <div className="task-costs" style={{marginTop: '0.5rem', fontSize: '0.85rem', color: '#888'}}>
+                  <span>消耗: 精力 {t.energy_cost}/回合 | 体魄 {t.constitution_cost}/回合</span>
                 </div>
                 {t.assigned_to ? (
                   <div>
