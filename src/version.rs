@@ -3,7 +3,7 @@
 
 /// API 版本号
 /// API Version
-pub const API_VERSION: &str = "1.0.0";
+pub const API_VERSION: &str = "1.0.1";
 
 /// 应用名称
 /// Application Name
