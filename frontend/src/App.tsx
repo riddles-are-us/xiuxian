@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { gameApi, GameInfo, Disciple, Task, MapData } from './api/gameApi';
 import MapView from './MapView';
+import APP_CONFIG from './config';
 import './App.css';
 
 function App() {
@@ -100,6 +101,9 @@ function App() {
   if (!gameId || !gameInfo) {
     return (
       <div className="App">
+        {APP_CONFIG.SHOW_VERSION && (
+          <div className="version-badge">v{APP_CONFIG.VERSION}</div>
+        )}
         <div className="welcome">
           <h1>修仙宗门模拟器</h1>
           <button onClick={createNewGame} className="btn-primary">
@@ -113,6 +117,9 @@ function App() {
 
   return (
     <div className="App">
+      {APP_CONFIG.SHOW_VERSION && (
+        <div className="version-badge">v{APP_CONFIG.VERSION}</div>
+      )}
       <header>
         <h1>{gameInfo.sect.name}</h1>
         <div className="stats">
