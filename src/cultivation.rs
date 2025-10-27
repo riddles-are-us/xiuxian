@@ -1,3 +1,32 @@
+/// 小境界
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum SubLevel {
+    Early,          // 初期
+    Middle,         // 中期
+    Perfect,        // 大圆满
+}
+
+impl SubLevel {
+    pub fn next(&self) -> Option<SubLevel> {
+        match self {
+            SubLevel::Early => Some(SubLevel::Middle),
+            SubLevel::Middle => Some(SubLevel::Perfect),
+            SubLevel::Perfect => None,
+        }
+    }
+}
+
+impl std::fmt::Display for SubLevel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let name = match self {
+            SubLevel::Early => "初期",
+            SubLevel::Middle => "中期",
+            SubLevel::Perfect => "大圆满",
+        };
+        write!(f, "{}", name)
+    }
+}
+
 /// 修为等级系统
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum CultivationLevel {
@@ -63,5 +92,71 @@ impl std::fmt::Display for CultivationLevel {
             CultivationLevel::Ascension => "飞升",
         };
         write!(f, "{}", name)
+    }
+}
+
+/// 修炼路径 - 需要完成的任务类型和数量
+#[derive(Debug, Clone)]
+pub struct CultivationPath {
+    pub required: std::collections::HashMap<String, u32>,  // 需要完成的任务类型和数量
+    pub completed: std::collections::HashMap<String, u32>, // 每种类型已完成的数量
+}
+
+impl CultivationPath {
+    /// 创建一个新的空修炼路径
+    pub fn new() -> Self {
+        Self {
+            required: std::collections::HashMap::new(),
+            completed: std::collections::HashMap::new(),
+        }
+    }
+
+    /// 创建带有要求的修炼路径
+    pub fn with_requirements(requirements: std::collections::HashMap<String, u32>) -> Self {
+        let mut completed = std::collections::HashMap::new();
+        for task_type in requirements.keys() {
+            completed.insert(task_type.clone(), 0);
+        }
+        Self {
+            required: requirements,
+            completed,
+        }
+    }
+
+    /// 检查是否完成
+    pub fn is_completed(&self) -> bool {
+        for (task_type, required_count) in &self.required {
+            let completed_count = self.completed.get(task_type).unwrap_or(&0);
+            if completed_count < required_count {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// 完成一个指定类型的任务
+    pub fn complete_task_by_type(&mut self, task_type: &str) -> bool {
+        if let Some(&required_count) = self.required.get(task_type) {
+            let completed_count = self.completed.entry(task_type.to_string()).or_insert(0);
+            if *completed_count < required_count {
+                *completed_count += 1;
+                return true;
+            }
+        }
+        false
+    }
+
+    /// 获取总进度
+    pub fn progress(&self) -> (u32, u32) {
+        let total_required: u32 = self.required.values().sum();
+        let total_completed: u32 = self.completed.values().sum();
+        (total_completed, total_required)
+    }
+
+    /// 获取每种类型的进度
+    pub fn progress_by_type(&self, task_type: &str) -> (u32, u32) {
+        let required = self.required.get(task_type).copied().unwrap_or(0);
+        let completed = self.completed.get(task_type).copied().unwrap_or(0);
+        (completed, required)
     }
 }

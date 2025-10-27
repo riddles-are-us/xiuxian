@@ -66,7 +66,8 @@ impl InteractiveGame {
 
     /// 开始新的回合
     pub fn start_turn(&mut self) {
-        self.sect.year += 1;
+        // 弟子年龄增长和寿元检查（这会增加年份）
+        self.sect.yearly_update();
 
         if !self.is_web_mode {
             UI::clear_screen();
@@ -92,21 +93,44 @@ impl InteractiveGame {
             self.sect.recruit_disciple(disciple);
         }
 
-        // 3. 弟子年龄增长和寿元检查
-        self.sect.yearly_update();
-
-        // 4. 检查突破
-        self.check_breakthroughs();
-
-        // 5. 清理过期任务
+        // 3. 清理过期任务
         self.remove_expired_tasks();
 
-        // 6. 生成新任务
+        // 4. 生成新任务
         let mut new_tasks = self.map.get_available_tasks();
         for task in &mut new_tasks {
             task.created_turn = self.sect.year;
         }
-        self.current_tasks.extend(new_tasks);
+
+        // 过滤掉同一地点已有探索任务的新探索任务
+        use crate::task::TaskType;
+
+        // 收集当前所有探索任务的地点
+        let existing_exploration_locations: std::collections::HashSet<String> = self
+            .current_tasks
+            .iter()
+            .filter_map(|task| {
+                if let TaskType::Exploration(exploration) = &task.task_type {
+                    Some(exploration.location.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        // 过滤新任务：如果是探索任务且地点已存在，则排除
+        let filtered_tasks: Vec<_> = new_tasks
+            .into_iter()
+            .filter(|task| {
+                if let TaskType::Exploration(exploration) = &task.task_type {
+                    !existing_exploration_locations.contains(&exploration.location)
+                } else {
+                    true
+                }
+            })
+            .collect();
+
+        self.current_tasks.extend(filtered_tasks);
 
         // 初始化新任务的分配记录
         let existing_task_ids: Vec<usize> = self.task_assignments.iter().map(|a| a.task_id).collect();
@@ -120,6 +144,9 @@ impl InteractiveGame {
                 });
             }
         }
+
+        // 5. 检查突破和分配修炼路径（在任务生成之后）
+        self.check_breakthroughs();
 
         // 6. 地图更新
         self.map.update();
@@ -563,6 +590,19 @@ impl InteractiveGame {
                 disciple.dao_heart =
                     ((disciple.dao_heart as i32 + task.dao_heart_impact).max(0) as u32).min(100);
 
+                // 获取任务类型字符串
+                use crate::task::TaskType;
+                let task_type_str = match &task.task_type {
+                    TaskType::Combat(_) => "Combat",
+                    TaskType::Exploration(_) => "Exploration",
+                    TaskType::Gathering(_) => "Gathering",
+                    TaskType::Auxiliary(_) => "Auxiliary",
+                    TaskType::Investment(_) => "Investment",
+                };
+
+                // 检查并标记修炼路径任务
+                let path_task_completed = disciple.cultivation.try_complete_path_task_by_type(task_type_str);
+
                 println!(
                     "✅ {} 完成任务 [{}]",
                     disciple_name, task.name
@@ -571,6 +611,14 @@ impl InteractiveGame {
                     "   获得: 修为+{}, 资源+{}, 声望+{}",
                     progress_gained, task.resource_reward, task.reputation_reward
                 );
+
+                if path_task_completed {
+                    let (completed, total) = disciple.cultivation.cultivation_path
+                        .as_ref()
+                        .map(|p| p.progress())
+                        .unwrap_or((0, 0));
+                    println!("   🔮 修炼路径进度: {}/{}", completed, total);
+                }
 
                 if task.dao_heart_impact != 0 {
                     println!("   道心变化: {:+}", task.dao_heart_impact);
@@ -610,9 +658,17 @@ impl InteractiveGame {
     /// 检查突破
     fn check_breakthroughs(&mut self) {
         let mut events = Vec::new();
+        let mut disciples_need_path = Vec::new();
 
         for disciple in self.sect.alive_disciples_mut() {
-            if disciple.cultivation.is_perfect() {
+            // 检查修炼路径是否为空（刚进入新境界）
+            if let Some(ref path) = disciple.cultivation.cultivation_path {
+                if path.required.is_empty() {
+                    disciples_need_path.push(disciple.id);
+                }
+            }
+
+            if disciple.cultivation.can_tribulate() {
                 if disciple.cultivation.current_level.requires_tribulation() {
                     // 需要渡劫，询问用户
                     events.push((disciple.id, disciple.name.clone(), true));
@@ -626,6 +682,11 @@ impl InteractiveGame {
                     }
                 }
             }
+        }
+
+        // 为需要的弟子生成修炼路径
+        for disciple_id in disciples_need_path {
+            self.generate_cultivation_path_tasks(disciple_id);
         }
 
         // 处理渡劫
@@ -848,6 +909,58 @@ impl InteractiveGame {
             crate::disciple::DiscipleType::Outer => "外门",
             crate::disciple::DiscipleType::Inner => "内门",
             crate::disciple::DiscipleType::Personal => "亲传",
+        }
+    }
+
+    /// 为弟子生成修炼路径任务
+    /// 为弟子生成修炼路径（设置需要完成的任务类型和数量）
+    pub fn generate_cultivation_path_tasks(&mut self, disciple_id: usize) {
+        use crate::cultivation::CultivationLevel;
+
+        // 找到弟子
+        let disciple = if let Some(d) = self.sect.disciples.iter_mut().find(|d| d.id == disciple_id) {
+            d
+        } else {
+            return;
+        };
+
+        let level = disciple.cultivation.current_level;
+
+        // 根据境界决定任务配比（总共12个）
+        let (combat, exploration, gathering, auxiliary) = match level {
+            CultivationLevel::QiRefining => (2, 3, 4, 3),      // 练气：多采集
+            CultivationLevel::Foundation => (4, 3, 2, 3),      // 筑基：多战斗
+            CultivationLevel::GoldenCore => (5, 4, 1, 2),      // 结丹：战斗+探索
+            CultivationLevel::NascentSoul => (6, 4, 0, 2),     // 凝婴：更多战斗
+            CultivationLevel::SpiritSevering => (7, 4, 0, 1),  // 化神：主要战斗
+            CultivationLevel::VoidRefinement => (8, 3, 0, 1),  // 练虚：几乎全战斗
+            CultivationLevel::Ascension => (10, 2, 0, 0),      // 飞升：纯战斗
+        };
+
+        // 创建修炼路径要求
+        let mut requirements = std::collections::HashMap::new();
+        if combat > 0 {
+            requirements.insert("Combat".to_string(), combat);
+        }
+        if exploration > 0 {
+            requirements.insert("Exploration".to_string(), exploration);
+        }
+        if gathering > 0 {
+            requirements.insert("Gathering".to_string(), gathering);
+        }
+        if auxiliary > 0 {
+            requirements.insert("Auxiliary".to_string(), auxiliary);
+        }
+
+        // 设置修炼路径
+        disciple.cultivation.cultivation_path =
+            Some(crate::cultivation::CultivationPath::with_requirements(requirements));
+
+        if !self.is_web_mode {
+            UI::success(&format!(
+                "✨ {} 获得了新的修炼路径（需完成{}个战斗、{}个探索、{}个采集、{}个辅助任务）！",
+                disciple.name, combat, exploration, gathering, auxiliary
+            ));
         }
     }
 }

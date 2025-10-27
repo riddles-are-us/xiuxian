@@ -157,7 +157,7 @@ impl Game {
         let mut tribulation_results = Vec::new();
 
         for disciple in self.sect.alive_disciples_mut() {
-            if disciple.cultivation.is_perfect() {
+            if disciple.cultivation.can_tribulate() {
                 if disciple.cultivation.current_level.requires_tribulation() {
                     // 需要渡劫
                     let success = disciple.attempt_tribulation();

@@ -92,6 +92,40 @@ impl Task {
         }
     }
 
+    /// 创建带有所有参数的任务（包括创建回合）
+    pub fn new_with_turn(
+        id: usize,
+        name: String,
+        task_type: TaskType,
+        progress_reward: u32,
+        resource_reward: u32,
+        reputation_reward: i32,
+        dao_heart_impact: i32,
+        created_turn: u32,
+    ) -> Self {
+        // 根据任务类型设置默认执行时间
+        let duration = match &task_type {
+            TaskType::Gathering(_) => 1,
+            TaskType::Combat(_) => 2,
+            TaskType::Exploration(_) => 3,
+            TaskType::Auxiliary(_) => 1,
+            TaskType::Investment(_) => 4,
+        };
+
+        Self {
+            id,
+            name,
+            task_type,
+            progress_reward,
+            resource_reward,
+            reputation_reward,
+            dao_heart_impact,
+            duration,
+            expiry_turns: 20,  // 修炼路径任务有更长的失效时间
+            created_turn,
+        }
+    }
+
     /// 检查任务是否已失效
     pub fn is_expired(&self, current_turn: u32) -> bool {
         current_turn >= self.created_turn + self.expiry_turns

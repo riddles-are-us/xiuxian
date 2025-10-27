@@ -117,7 +117,17 @@ impl From<&Disciple> for DiscipleDto {
             disciple_type: format!("{:?}", disciple.disciple_type),
             cultivation: CultivationDto {
                 level: format!("{:?}", disciple.cultivation.current_level),
+                sub_level: format!("{}", disciple.cultivation.sub_level),  // 使用Display trait
                 progress: disciple.cultivation.progress,
+                cultivation_path: disciple.cultivation.cultivation_path.as_ref().map(|path| {
+                    let (total_completed, total_required) = path.progress();
+                    CultivationPathDto {
+                        required: path.required.clone(),
+                        completed: path.completed.clone(),
+                        total_required,
+                        total_completed,
+                    }
+                }),
             },
             age: disciple.age,
             lifespan: disciple.lifespan,
@@ -138,7 +148,17 @@ impl From<&Disciple> for DiscipleDto {
 #[derive(Debug, Serialize, Clone)]
 pub struct CultivationDto {
     pub level: String,
-    pub progress: u32,
+    pub sub_level: String,           // 小境界（初期、中期、大圆满）
+    pub progress: u32,                // 当前小境界进度 0-100
+    pub cultivation_path: Option<CultivationPathDto>,  // 修炼路径（大圆满时）
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct CultivationPathDto {
+    pub required: std::collections::HashMap<String, u32>,  // 需要完成的任务类型和数量
+    pub completed: std::collections::HashMap<String, u32>, // 每种类型已完成的数量
+    pub total_required: u32,                                // 总共需要完成的任务数
+    pub total_completed: u32,                               // 总共已完成的任务数
 }
 
 #[derive(Debug, Serialize, Clone)]

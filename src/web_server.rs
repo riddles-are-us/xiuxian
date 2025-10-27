@@ -402,17 +402,28 @@ async fn assign_task(
     if let Some(game_mutex) = store.get_game(&game_id) {
         let mut game = game_mutex.lock().await;
 
-        // 找到任务索引
-        if let Some(task_idx) = game.current_tasks.iter().position(|t| t.id == task_id) {
-            game.task_assignments[task_idx].disciple_id = Some(req.disciple_id);
+        // 检查任务是否存在
+        if game.current_tasks.iter().any(|t| t.id == task_id) {
+            // 在 task_assignments 中找到对应的分配记录
+            if let Some(assignment) = game.task_assignments.iter_mut().find(|a| a.task_id == task_id) {
+                assignment.disciple_id = Some(req.disciple_id);
 
-            let response = AssignTaskResponse {
-                task_id,
-                disciple_id: req.disciple_id,
-                message: "任务分配成功".to_string(),
-            };
+                let response = AssignTaskResponse {
+                    task_id,
+                    disciple_id: req.disciple_id,
+                    message: "任务分配成功".to_string(),
+                };
 
-            (StatusCode::OK, Json(ApiResponse::ok(response)))
+                (StatusCode::OK, Json(ApiResponse::ok(response)))
+            } else {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ApiResponse::<AssignTaskResponse>::error(
+                        "ASSIGNMENT_NOT_FOUND".to_string(),
+                        "任务分配记录不存在".to_string(),
+                    )),
+                )
+            }
         } else {
             (
                 StatusCode::NOT_FOUND,
@@ -441,10 +452,21 @@ async fn unassign_task(
     if let Some(game_mutex) = store.get_game(&game_id) {
         let mut game = game_mutex.lock().await;
 
-        if let Some(task_idx) = game.current_tasks.iter().position(|t| t.id == task_id) {
-            game.task_assignments[task_idx].disciple_id = None;
-
-            (StatusCode::OK, Json(ApiResponse::ok("取消成功".to_string())))
+        // 检查任务是否存在
+        if game.current_tasks.iter().any(|t| t.id == task_id) {
+            // 在 task_assignments 中找到对应的分配记录
+            if let Some(assignment) = game.task_assignments.iter_mut().find(|a| a.task_id == task_id) {
+                assignment.disciple_id = None;
+                (StatusCode::OK, Json(ApiResponse::ok("取消成功".to_string())))
+            } else {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ApiResponse::<String>::error(
+                        "ASSIGNMENT_NOT_FOUND".to_string(),
+                        "任务分配记录不存在".to_string(),
+                    )),
+                )
+            }
         } else {
             (
                 StatusCode::NOT_FOUND,
@@ -532,7 +554,7 @@ async fn get_tribulation_candidates(
         let candidates: Vec<TribulationCandidateDto> = game.sect
             .alive_disciples()
             .iter()
-            .filter(|d| d.cultivation.is_perfect())
+            .filter(|d| d.cultivation.can_tribulate())
             .map(|d| TribulationCandidateDto {
                 disciple_id: d.id,
                 name: d.name.clone(),

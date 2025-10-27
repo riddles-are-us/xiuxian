@@ -57,11 +57,11 @@ function App() {
     }
   };
 
-  const startNewTurn = async () => {
+  const nextTurn = async () => {
     if (!gameId) return;
     try {
       setLoading(true);
-      await gameApi.startTurn(gameId);
+      await gameApi.nextTurn(gameId);
       await loadGameData(gameId);
     } catch (err: any) {
       setError(err.message);
@@ -85,19 +85,6 @@ function App() {
     try {
       setLoading(true);
       await gameApi.autoAssignTasks(gameId);
-      await loadGameData(gameId);
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const endTurn = async () => {
-    if (!gameId) return;
-    try {
-      setLoading(true);
-      await gameApi.endTurn(gameId);
       await loadGameData(gameId);
     } catch (err: any) {
       setError(err.message);
@@ -137,9 +124,8 @@ function App() {
       </header>
 
       <div className="controls">
-        <button onClick={startNewTurn} className="btn-primary">开始新回合</button>
+        <button onClick={nextTurn} className="btn-primary">下一回合</button>
         <button onClick={autoAssign} className="btn-secondary">自动分配任务</button>
-        <button onClick={endTurn} className="btn-warning">结束回合</button>
         <button onClick={() => setShowMap(!showMap)} className="btn-primary">
           {showMap ? '隐藏地图' : '显示地图'}
         </button>
@@ -167,12 +153,55 @@ function App() {
                 <div className="disciple-info">
                   <div className="info-row">
                     <span className="label">修为:</span>
-                    <span className="value">{d.cultivation.level} ({d.cultivation.progress}%)</span>
+                    <span className="value">{d.cultivation.level} {d.cultivation.sub_level}</span>
+                  </div>
+
+                  <div className="info-row">
+                    <span className="label">小境界进度:</span>
+                    <span className="value">{d.cultivation.progress}%</span>
                   </div>
 
                   <div className="progress-bar">
                     <div className="progress-fill" style={{width: `${d.cultivation.progress}%`}}></div>
                   </div>
+
+                  {d.cultivation.cultivation_path && d.cultivation.cultivation_path.total_required > 0 && (
+                    <div className="cultivation-path">
+                      <div className="path-header">
+                        <span className="label">🔮 修炼路径:</span>
+                        <span className="value">
+                          {d.cultivation.cultivation_path.total_completed}/{d.cultivation.cultivation_path.total_required}
+                        </span>
+                      </div>
+                      <div className="progress-bar">
+                        <div
+                          className="progress-fill"
+                          style={{
+                            width: `${(d.cultivation.cultivation_path.total_completed / d.cultivation.cultivation_path.total_required) * 100}%`,
+                            background: 'linear-gradient(90deg, #f6ad55 0%, #ed8936 100%)'
+                          }}
+                        ></div>
+                      </div>
+                      <div className="path-tasks">
+                        {Object.entries(d.cultivation.cultivation_path.required).map(([taskType, required]) => {
+                          const completed = d.cultivation.cultivation_path!.completed[taskType] || 0;
+                          const isCompleted = completed >= required;
+                          const taskTypeNames: {[key: string]: string} = {
+                            'Combat': '战斗',
+                            'Exploration': '探索',
+                            'Gathering': '采集',
+                            'Auxiliary': '辅助',
+                            'Investment': '投资'
+                          };
+                          return (
+                            <div key={taskType} className={`path-task-item ${isCompleted ? 'completed' : ''}`}>
+                              {isCompleted ? '✓' : '○'} {taskTypeNames[taskType] || taskType}: {completed}/{required}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
 
                   <div className="info-row">
                     <span className="label">道心:</span>

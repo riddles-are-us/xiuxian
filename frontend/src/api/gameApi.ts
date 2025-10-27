@@ -20,7 +20,14 @@ export interface Disciple {
   disciple_type: string;
   cultivation: {
     level: string;
-    progress: number;
+    sub_level: string;        // 小境界
+    progress: number;          // 当前小境界进度 0-100
+    cultivation_path: {        // 修炼路径
+      required: { [key: string]: number };   // 需要完成的任务类型和数量
+      completed: { [key: string]: number };  // 每种类型已完成的数量
+      total_required: number;                // 总共需要完成的任务数
+      total_completed: number;               // 总共已完成的任务数
+    } | null;
   };
   age: number;
   lifespan: number;
@@ -160,6 +167,16 @@ export const gameApi = {
 
   getMap: async (gameId: string): Promise<MapData> => {
     const response = await axios.get(`${API_BASE}/game/${gameId}/map`);
+    return response.data.data;
+  },
+
+  nextTurn: async (gameId: string) => {
+    // 先结束当前回合
+    await axios.post(`${API_BASE}/game/${gameId}/turn/end`, {
+      assignments: []
+    });
+    // 再开始新回合
+    const response = await axios.post(`${API_BASE}/game/${gameId}/turn/start`);
     return response.data.data;
   }
 };

@@ -260,6 +260,71 @@ header {
   white-space: nowrap;
 }
 
+.cultivation-path {
+  margin-top: 0.75rem;
+  padding: 0.75rem;
+  background: linear-gradient(135deg, #fef5e7 0%, #fdebd0 100%);
+  border-radius: 8px;
+  border-left: 3px solid #f6ad55;
+}
+
+.path-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.path-header .label {
+  font-weight: 600;
+  color: #744210;
+}
+
+.path-header .value {
+  font-weight: 700;
+  color: #c05621;
+}
+
+.current-required {
+  margin-top: 0.5rem;
+  font-size: 0.8rem;
+  color: #744210;
+  font-style: italic;
+  padding: 0.3rem 0.5rem;
+  background: rgba(255, 255, 255, 0.6);
+  border-radius: 4px;
+}
+
+.path-tasks {
+  margin-top: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.path-task-item {
+  font-size: 0.75rem;
+  padding: 0.4rem 0.6rem;
+  background: rgba(255, 255, 255, 0.7);
+  border-radius: 4px;
+  border-left: 3px solid #f6ad55;
+  transition: all 0.2s;
+}
+
+.path-task-item.completed {
+  background: rgba(72, 187, 120, 0.15);
+  border-left-color: #48bb78;
+  color: #2f855a;
+  text-decoration: line-through;
+}
+
+.path-task-item:not(.completed):hover {
+  background: rgba(255, 255, 255, 0.9);
+  transform: translateX(2px);
+}
+
 .tasks-list {
   display: flex;
   flex-direction: column;

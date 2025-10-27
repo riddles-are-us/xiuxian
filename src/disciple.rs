@@ -1,4 +1,4 @@
-use crate::cultivation::CultivationLevel;
+use crate::cultivation::{CultivationLevel, SubLevel, CultivationPath};
 use crate::task::{Task, TaskType};
 
 /// 弟子类型
@@ -53,24 +53,69 @@ pub struct DaoCompanion {
 #[derive(Debug, Clone)]
 pub struct CultivationProgress {
     pub current_level: CultivationLevel,
-    pub progress: u32,           // 当前等级进度 0-100
-    pub completed_tasks: Vec<usize>, // 已完成任务ID
-    pub pending_tasks: Vec<Task>,    // 待完成任务
+    pub sub_level: SubLevel,         // 小境界
+    pub progress: u32,                // 当前小境界进度 0-100
+    pub cultivation_path: Option<CultivationPath>,  // 修炼路径（大圆满时需要）
 }
 
 impl CultivationProgress {
     pub fn new(level: CultivationLevel) -> Self {
         Self {
             current_level: level,
+            sub_level: SubLevel::Early,
             progress: 0,
-            completed_tasks: Vec::new(),
-            pending_tasks: Vec::new(),
+            cultivation_path: Some(CultivationPath::new()), // 每个境界都有修炼路径
         }
     }
 
-    /// 是否达到大圆满
-    pub fn is_perfect(&self) -> bool {
-        self.progress >= 100 && self.pending_tasks.is_empty()
+    /// 是否达到当前小境界的完成状态
+    pub fn is_sub_level_complete(&self) -> bool {
+        self.progress >= 100
+    }
+
+    /// 是否可以进行渡劫（大圆满且完成修炼路径）
+    pub fn can_tribulate(&self) -> bool {
+        self.sub_level == SubLevel::Perfect &&
+        self.cultivation_path.as_ref().map(|p| p.is_completed()).unwrap_or(false)
+    }
+
+    /// 增加修为进度
+    pub fn add_progress(&mut self, amount: u32) {
+        self.progress = (self.progress + amount).min(100);
+    }
+
+    /// 尝试突破小境界
+    pub fn try_sublevel_breakthrough(&mut self) -> bool {
+        if !self.is_sub_level_complete() {
+            return false;
+        }
+
+        match self.sub_level.next() {
+            Some(next_sub) => {
+                self.sub_level = next_sub;
+                self.progress = 0;
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// 尝试完成修炼路径任务（按任务类型）
+    pub fn try_complete_path_task_by_type(&mut self, task_type: &str) -> bool {
+        if let Some(ref mut path) = self.cultivation_path {
+            path.complete_task_by_type(task_type)
+        } else {
+            false
+        }
+    }
+
+    /// 突破到下一个大境界
+    pub fn breakthrough_major_level(&mut self, new_level: CultivationLevel) {
+        self.current_level = new_level;
+        self.sub_level = SubLevel::Early;
+        self.progress = 0;
+        // 创建新的空修炼路径（任务将由InteractiveGame从当前任务中选择）
+        self.cultivation_path = Some(CultivationPath::new());
     }
 }
 
@@ -148,7 +193,13 @@ impl Disciple {
     }
 
     /// 尝试渡劫
+    /// 渡劫
     pub fn attempt_tribulation(&mut self) -> bool {
+        // 检查是否满足渡劫条件
+        if !self.cultivation.can_tribulate() {
+            return false;
+        }
+
         use rand::Rng;
         let mut rng = rand::thread_rng();
         let success_rate = self.tribulation_success_rate();
@@ -156,9 +207,7 @@ impl Disciple {
 
         if roll < success_rate {
             if let Some(next_level) = self.cultivation.current_level.next() {
-                self.cultivation.current_level = next_level;
-                self.cultivation.progress = 0;
-                self.cultivation.completed_tasks.clear();
+                self.cultivation.breakthrough_major_level(next_level);
                 self.lifespan = next_level.base_lifespan();
                 return true;
             }
@@ -167,21 +216,15 @@ impl Disciple {
         false
     }
 
-    /// 尝试突破
+    /// 尝试突破（现在只用于练气期突破到筑基）
     pub fn breakthrough(&mut self) -> bool {
-        if self.cultivation.is_perfect() {
-            // 如果需要渡劫，则进行渡劫
-            if self.cultivation.current_level.requires_tribulation() {
-                return self.attempt_tribulation();
-            } else {
-                // 不需要渡劫的直接突破
-                if let Some(next_level) = self.cultivation.current_level.next() {
-                    self.cultivation.current_level = next_level;
-                    self.cultivation.progress = 0;
-                    self.cultivation.completed_tasks.clear();
-                    self.lifespan = next_level.base_lifespan();
-                    return true;
-                }
+        // 只有练气期可以直接突破（不需要渡劫）
+        if self.cultivation.current_level == CultivationLevel::QiRefining &&
+           self.cultivation.can_tribulate() {
+            if let Some(next_level) = self.cultivation.current_level.next() {
+                self.cultivation.breakthrough_major_level(next_level);
+                self.lifespan = next_level.base_lifespan();
+                return true;
             }
         }
         false
@@ -200,8 +243,23 @@ impl Disciple {
         let base_progress = task.progress_reward;
         let actual_progress = (base_progress as f32 * (1.0 + talent_bonus)) as u32;
 
-        self.cultivation.progress = (self.cultivation.progress + actual_progress).min(100);
-        self.cultivation.completed_tasks.push(task.id);
+        // 添加修为进度
+        self.cultivation.add_progress(actual_progress);
+
+        // 尝试完成修炼路径任务（按任务类型）
+        let task_type_str = match &task.task_type {
+            TaskType::Combat(_) => "Combat",
+            TaskType::Exploration(_) => "Exploration",
+            TaskType::Gathering(_) => "Gathering",
+            TaskType::Auxiliary(_) => "Auxiliary",
+            TaskType::Investment(_) => "Investment",
+        };
+        self.cultivation.try_complete_path_task_by_type(task_type_str);
+
+        // 自动检查并突破小境界
+        if self.cultivation.is_sub_level_complete() {
+            self.cultivation.try_sublevel_breakthrough();
+        }
 
         actual_progress
     }
