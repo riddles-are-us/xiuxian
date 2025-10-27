@@ -39,6 +39,13 @@ pub struct ApiError {
     pub details: Option<String>,
 }
 
+/// 版本信息响应
+#[derive(Debug, Serialize)]
+pub struct VersionResponse {
+    pub api_version: String,
+    pub app_name: String,
+}
+
 /// 创建游戏请求
 #[derive(Debug, Deserialize)]
 pub struct CreateGameRequest {

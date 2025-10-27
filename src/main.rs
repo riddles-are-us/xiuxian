@@ -9,6 +9,7 @@ mod ui;
 mod interactive;
 mod api_types;
 mod web_server;
+mod version;
 
 use interactive::InteractiveGame;
 use ui::UI;

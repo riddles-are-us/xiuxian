@@ -48,6 +48,9 @@ pub fn create_router() -> Router {
     let store = Arc::new(GameStore::new());
 
     Router::new()
+        // 版本信息
+        .route("/api/version", get(get_version))
+
         // 游戏管理
         .route("/api/game/new", post(create_game))
         .route("/api/game/:game_id", get(get_game_info))
@@ -99,6 +102,15 @@ pub async fn start_server() {
 }
 
 // ==================== API 处理器 ====================
+
+/// 获取版本信息
+async fn get_version() -> impl IntoResponse {
+    let response = VersionResponse {
+        api_version: crate::version::API_VERSION.to_string(),
+        app_name: crate::version::APP_NAME.to_string(),
+    };
+    (StatusCode::OK, Json(ApiResponse::ok(response)))
+}
 
 /// 创建新游戏
 async fn create_game(

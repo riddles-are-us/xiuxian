@@ -103,7 +103,17 @@ export interface MapData {
   elements: MapElement[];
 }
 
+export interface VersionInfo {
+  api_version: string;
+  app_name: string;
+}
+
 export const gameApi = {
+  getVersion: async (): Promise<VersionInfo> => {
+    const response = await axios.get(`${API_BASE}/version`);
+    return response.data.data;
+  },
+
   createGame: async (sectName: string) => {
     const response = await axios.post(`${API_BASE}/game/new`, {
       sect_name: sectName

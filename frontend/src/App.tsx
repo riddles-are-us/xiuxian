@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { gameApi, GameInfo, Disciple, Task, MapData } from './api/gameApi';
+import { gameApi, GameInfo, Disciple, Task, MapData, VersionInfo } from './api/gameApi';
 import MapView from './MapView';
 import APP_CONFIG from './config';
 import './App.css';
@@ -12,9 +12,15 @@ function App() {
   const [disciples, setDisciples] = useState<Disciple[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [mapData, setMapData] = useState<MapData | null>(null);
+  const [serverVersion, setServerVersion] = useState<VersionInfo | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showMap, setShowMap] = useState(false);
+
+  useEffect(() => {
+    // Fetch server version on mount
+    gameApi.getVersion().then(setServerVersion).catch(console.error);
+  }, []);
 
   useEffect(() => {
     if (gameId) {
@@ -102,7 +108,18 @@ function App() {
     return (
       <div className="App">
         {APP_CONFIG.SHOW_VERSION && (
-          <div className="version-badge">v{APP_CONFIG.VERSION}</div>
+          <div className="version-badge">
+            <div className="version-item">
+              <span className="version-label">前端</span>
+              <span className="version-value">v{APP_CONFIG.VERSION}</span>
+            </div>
+            {serverVersion && (
+              <div className="version-item">
+                <span className="version-label">后端</span>
+                <span className="version-value">v{serverVersion.api_version}</span>
+              </div>
+            )}
+          </div>
         )}
         <div className="welcome">
           <h1>修仙宗门模拟器</h1>
@@ -118,7 +135,18 @@ function App() {
   return (
     <div className="App">
       {APP_CONFIG.SHOW_VERSION && (
-        <div className="version-badge">v{APP_CONFIG.VERSION}</div>
+        <div className="version-badge">
+          <div className="version-item">
+            <span className="version-label">前端</span>
+            <span className="version-value">v{APP_CONFIG.VERSION}</span>
+          </div>
+          {serverVersion && (
+            <div className="version-item">
+              <span className="version-label">后端</span>
+              <span className="version-value">v{serverVersion.api_version}</span>
+            </div>
+          )}
+        </div>
       )}
       <header>
         <h1>{gameInfo.sect.name}</h1>
