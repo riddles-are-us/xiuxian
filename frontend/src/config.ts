@@ -10,7 +10,7 @@ export const APP_CONFIG = {
    * 格式: 主版本.次版本.修订版本
    * Format: major.minor.patch
    */
-  VERSION: "1.0.3",
+  VERSION: "1.0.4",
 
   /**
    * 应用名称
