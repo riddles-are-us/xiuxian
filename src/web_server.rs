@@ -209,10 +209,6 @@ async fn start_turn(
                         reputation: task.reputation_reward,
                     },
                     dao_heart_impact: task.dao_heart_impact,
-                    suitable_disciples: SuitableDisciples {
-                        free: vec![],
-                        busy: vec![],
-                    },
                     assigned_to,
                     duration: task.duration,
                     progress,
@@ -385,10 +381,6 @@ async fn get_tasks(
                         reputation: task.reputation_reward,
                     },
                     dao_heart_impact: task.dao_heart_impact,
-                    suitable_disciples: SuitableDisciples {
-                        free: vec![],
-                        busy: vec![],
-                    },
                     assigned_to,
                     duration: task.duration,
                     progress,
@@ -424,6 +416,32 @@ async fn assign_task(
 
         // 检查任务是否存在
         if game.current_tasks.iter().any(|t| t.id == task_id) {
+            // 检查弟子是否存在
+            if !game.sect.alive_disciples().iter().any(|d| d.id == req.disciple_id) {
+                return (
+                    StatusCode::NOT_FOUND,
+                    Json(ApiResponse::<AssignTaskResponse>::error(
+                        "DISCIPLE_NOT_FOUND".to_string(),
+                        "弟子不存在".to_string(),
+                    )),
+                );
+            }
+
+            // 检查弟子是否已经被分配到其他任务
+            let is_busy = game.task_assignments.iter().any(|a| {
+                a.disciple_id == Some(req.disciple_id) && a.task_id != task_id
+            });
+
+            if is_busy {
+                return (
+                    StatusCode::CONFLICT,
+                    Json(ApiResponse::<AssignTaskResponse>::error(
+                        "DISCIPLE_BUSY".to_string(),
+                        "该弟子已被分配到其他任务".to_string(),
+                    )),
+                );
+            }
+
             // 在 task_assignments 中找到对应的分配记录
             if let Some(assignment) = game.task_assignments.iter_mut().find(|a| a.task_id == task_id) {
                 assignment.disciple_id = Some(req.disciple_id);

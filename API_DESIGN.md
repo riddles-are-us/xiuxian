@@ -279,10 +279,6 @@ Response:
         "reputation": 25
       },
       "dao_heart_impact": 3,
-      "suitable_disciples": {
-        "free": [1, 3, 5],
-        "busy": [2]
-      },
       "assigned_to": 1,
       "duration": 3,  // 任务需要的回合数
       "progress": 2,  // 已完成的回合数
@@ -305,7 +301,7 @@ Request:
   "disciple_id": 5
 }
 
-Response:
+Response (成功):
 {
   "success": true,
   "data": {
@@ -314,6 +310,31 @@ Response:
     "message": "已将任务分配给云飞扬"
   }
 }
+
+Response (弟子不存在 - 404):
+{
+  "success": false,
+  "data": null,
+  "error": {
+    "code": "DISCIPLE_NOT_FOUND",
+    "message": "弟子不存在"
+  }
+}
+
+Response (弟子忙碌 - 409 Conflict):
+{
+  "success": false,
+  "data": null,
+  "error": {
+    "code": "DISCIPLE_BUSY",
+    "message": "该弟子已被分配到其他任务"
+  }
+}
+
+注：
+- 分配前会检查弟子是否存在
+- 分配前会检查弟子是否已被分配到其他任务
+- 同一弟子不能同时执行多个任务
 ```
 
 #### 取消任务分配
@@ -590,6 +611,7 @@ Response:
 ### 错误码列表
 - `GAME_NOT_FOUND` - 游戏不存在
 - `DISCIPLE_NOT_FOUND` - 弟子不存在
+- `DISCIPLE_BUSY` - 弟子已被分配到其他任务
 - `TASK_NOT_FOUND` - 任务不存在
 - `ASSIGNMENT_NOT_FOUND` - 任务分配不存在
 - `INVALID_PILL_TYPE` - 无效的丹药类型
@@ -600,6 +622,7 @@ Response:
 - `200 OK` - 请求成功（即使业务逻辑失败，如渡劫失败）
 - `400 Bad Request` - 请求参数错误
 - `404 Not Found` - 资源不存在
+- `409 Conflict` - 资源冲突（如弟子已被分配）
 - `500 Internal Server Error` - 服务器内部错误
 
 ## 数据模型

@@ -212,7 +212,6 @@ pub struct TaskDto {
     pub task_type: String,
     pub rewards: TaskRewards,
     pub dao_heart_impact: i32,
-    pub suitable_disciples: SuitableDisciples,
     pub assigned_to: Option<usize>,
     pub duration: u32,           // 任务执行时间（回合数）
     pub progress: u32,            // 当前执行进度（回合数）
@@ -228,12 +227,6 @@ pub struct TaskRewards {
     pub progress: u32,
     pub resources: u32,
     pub reputation: i32,
-}
-
-#[derive(Debug, Serialize, Clone)]
-pub struct SuitableDisciples {
-    pub free: Vec<usize>,
-    pub busy: Vec<usize>,
 }
 
 /// 任务分配请求

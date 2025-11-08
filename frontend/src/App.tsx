@@ -87,7 +87,8 @@ function App() {
       await gameApi.assignTask(gameId, taskId, discipleId);
       await loadGameData(gameId);
     } catch (err: any) {
-      setError(err.message);
+      const errorMsg = err.response?.data?.error?.message || err.message;
+      setError(errorMsg);
     }
   };
 

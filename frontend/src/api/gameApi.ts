@@ -66,10 +66,6 @@ export interface Task {
     reputation: number;
   };
   dao_heart_impact: number;
-  suitable_disciples: {
-    free: number[];
-    busy: number[];
-  };
   assigned_to: number | null;
   duration: number;
   progress: number;
