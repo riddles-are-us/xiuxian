@@ -191,7 +191,6 @@ Response:
         "cultivation_level": "GoldenCore"
       },
       "children_count": 2,
-      "current_task": "讨伐噬魂虎",
       "current_task_info": {
         "task_id": 1,
         "task_name": "讨伐噬魂虎",
@@ -242,7 +241,6 @@ Response:
       "cultivation_level": "GoldenCore"
     },
     "children_count": 2,
-    "current_task": "讨伐噬魂虎",
     "current_task_info": {
       "task_id": 1,
       "task_name": "讨伐噬魂虎",

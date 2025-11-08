@@ -135,7 +135,6 @@ pub struct Disciple {
     pub heritage: Option<Heritage>,
     pub dao_companion: Option<DaoCompanion>,
     pub children: Vec<usize>, // 子女ID列表
-    pub current_task: Option<String>, // 当前执行的任务名称
 }
 
 impl Disciple {
@@ -156,7 +155,6 @@ impl Disciple {
             heritage: None,
             dao_companion: None,
             children: Vec::new(),
-            current_task: None,
         }
     }
 

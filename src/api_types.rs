@@ -105,7 +105,6 @@ pub struct DiscipleDto {
     pub heritage: Option<HeritageDto>,
     pub dao_companion: Option<DaoCompanionDto>,
     pub children_count: usize,
-    pub current_task: Option<String>,
     pub current_task_info: Option<CurrentTaskInfo>,
 }
 
@@ -150,7 +149,6 @@ impl From<&Disciple> for DiscipleDto {
                 affinity: dc.affinity,
             }),
             children_count: disciple.children.len(),
-            current_task: disciple.current_task.clone(),
             current_task_info: None,  // 将在web_server中填充
         }
     }

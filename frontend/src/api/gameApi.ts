@@ -47,7 +47,6 @@ export interface Disciple {
     affinity: number;
   } | null;
   children_count: number;
-  current_task: string | null;
   current_task_info: {
     task_id: number;
     task_name: string;

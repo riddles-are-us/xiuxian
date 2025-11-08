@@ -381,7 +381,8 @@ impl InteractiveGame {
 
         println!("\n选择执行弟子:");
         for (i, (_, disciple)) in suitable.iter().enumerate() {
-            let status = if disciple.current_task.is_some() {
+            let is_busy = self.task_assignments.iter().any(|a| a.disciple_id == Some(disciple.id));
+            let status = if is_busy {
                 "（忙碌）"
             } else {
                 ""
@@ -557,11 +558,6 @@ impl InteractiveGame {
             // 从当前任务中移除已完成的任务
             self.current_tasks.retain(|t| t.id != task.id);
             self.task_assignments.retain(|a| a.task_id != task.id);
-
-            // 清除弟子的current_task
-            if let Some(disciple) = self.sect.disciples.iter_mut().find(|d| d.id == disciple_id) {
-                disciple.current_task = None;
-            }
         }
 
         // 处理结果
@@ -758,19 +754,6 @@ impl InteractiveGame {
                 .retain(|t| !expired_task_ids.contains(&t.id));
             self.task_assignments
                 .retain(|a| !expired_task_ids.contains(&a.task_id));
-
-            // 清除正在执行过期任务的弟子的current_task
-            for task_id in expired_task_ids {
-                for disciple in &mut self.sect.disciples {
-                    if let Some(ref task_name) = disciple.current_task {
-                        if let Some(task) = self.current_tasks.iter().find(|t| t.id == task_id) {
-                            if &task.name == task_name {
-                                disciple.current_task = None;
-                            }
-                        }
-                    }
-                }
-            }
         }
     }
 
