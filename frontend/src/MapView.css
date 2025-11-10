@@ -78,6 +78,12 @@
   border-color: #d53f8c;
 }
 
+.tile-terrain {
+  background: linear-gradient(135deg, #bee3f8 0%, #90cdf4 100%);
+  border-color: #4299e1;
+  opacity: 0.8;
+}
+
 .tile-hovered {
   border-width: 2px;
   border-color: #4299e1;

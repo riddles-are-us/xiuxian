@@ -234,6 +234,7 @@ impl Disciple {
 
     /// 完成任务
     pub fn complete_task(&mut self, task: &Task) -> u32 {
+        // 1. 天赋加成（保留原有系统）
         let talent_bonus = match &task.task_type {
             TaskType::Gathering(_) => self.get_talent_bonus(&TalentType::Wood),
             TaskType::Combat(_) => self.get_talent_bonus(&TalentType::Sword),
@@ -242,8 +243,27 @@ impl Disciple {
             TaskType::Investment(_) => 0.0,
         };
 
-        let base_progress = task.progress_reward;
-        let actual_progress = (base_progress as f32 * (1.0 + talent_bonus)) as u32;
+        // 2. 动态修为奖励计算
+        let base_progress = task.progress_reward as f32;
+
+        // 3. 难度系数：任务越难，奖励越高
+        //    难度值通常在 0-100，我们将其映射到 0.5-2.0 的乘数
+        let task_difficulty = task.get_difficulty() as f32;
+        let difficulty_multiplier = 0.5 + (task_difficulty / 50.0).min(1.5);
+
+        // 4. 等级惩罚：弟子修为越高，获得的奖励越少（边际收益递减）
+        //    练气(0)->100%, 筑基(1)->83%, 结丹(2)->71%, 凝婴(3)->63%, 化神(4)->56%, 练虚(5)->50%, 飞升(6)->45%
+        let disciple_level = self.cultivation.current_level.to_numeric() as f32;
+        let level_penalty = 1.0 / (1.0 + disciple_level / 6.0);
+
+        // 5. 天赋乘数
+        let talent_multiplier = 1.0 + talent_bonus;
+
+        // 6. 最终奖励计算
+        let actual_progress = (base_progress * difficulty_multiplier * level_penalty * talent_multiplier) as u32;
+
+        // 确保至少给予1点修为
+        let actual_progress = actual_progress.max(1);
 
         // 添加修为进度
         self.cultivation.add_progress(actual_progress);

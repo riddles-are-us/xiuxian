@@ -218,6 +218,7 @@ pub struct TaskDto {
     pub remaining_turns: u32,     // 剩余回合数直到失效
     pub energy_cost: u32,        // 精力消耗（每回合）
     pub constitution_cost: u32,   // 体魄消耗（每回合）
+    pub skill_required: Option<String>,  // 需要的技能
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -352,11 +353,20 @@ pub struct PositionDto {
 #[derive(Debug, Serialize, Clone)]
 #[serde(tag = "type")]
 pub enum MapElementDetails {
-    Village { population: u32, prosperity: u32 },
-    Faction { power_level: u32, relationship: i32 },
+    Village { population: u32, prosperity: u32, under_attack: Option<AttackInfo> },
+    Faction { power_level: u32, relationship: i32, under_attack: Option<AttackInfo> },
     DangerousLocation { danger_level: u32 },
-    SecretRealm { realm_type: String, difficulty: u32 },
-    Monster { level: u32, is_demon: bool },
+    SecretRealm { realm_type: String, difficulty: u32, under_attack: Option<AttackInfo> },
+    Monster { level: u32, is_demon: bool, growth_rate: f64, invading_location: Option<String> },
+    Terrain { terrain_type: String },
+}
+
+/// 攻击信息
+#[derive(Debug, Serialize, Clone)]
+pub struct AttackInfo {
+    pub attacker_name: String,  // 攻击者名称
+    pub attacker_level: u32,     // 攻击者等级
+    pub is_demon: bool,          // 是否为魔物
 }
 
 /// 地图数据响应

@@ -18,13 +18,22 @@ const MapView: React.FC<MapViewProps> = ({ mapData }) => {
   };
 
   // 获取元素图标
-  const getElementIcon = (elementType: string): string => {
+  const getElementIcon = (elementType: string, details?: any): string => {
     switch(elementType) {
       case 'Village': return '🏘️';
       case 'Faction': return '⚔️';
       case 'DangerousLocation': return '⚠️';
       case 'SecretRealm': return '🌀';
       case 'Monster': return '👹';
+      case 'Terrain': {
+        // 根据地形类型显示不同图标
+        const terrainType = details?.terrain_type;
+        if (terrainType === 'Mountain') return '⛰️';
+        if (terrainType === 'Water') return '💧';
+        if (terrainType === 'Forest') return '🌲';
+        if (terrainType === 'Plain') return '🌾';
+        return '🗺️';
+      }
       default: return '?';
     }
   };
@@ -37,8 +46,38 @@ const MapView: React.FC<MapViewProps> = ({ mapData }) => {
       case 'DangerousLocation': return 'tile-dangerous';
       case 'SecretRealm': return 'tile-secret';
       case 'Monster': return 'tile-monster';
+      case 'Terrain': return 'tile-terrain';
       default: return 'tile-empty';
     }
+  };
+
+  // 渲染攻击警告
+  const renderAttackWarning = (attackInfo?: any) => {
+    if (!attackInfo) return null;
+
+    return (
+      <div className="detail-row" style={{
+        backgroundColor: attackInfo.is_demon ? '#fed7d7' : '#fef5e7',
+        padding: '8px',
+        borderRadius: '4px',
+        marginBottom: '8px',
+        border: attackInfo.is_demon ? '2px solid #c53030' : '2px solid #ed8936'
+      }}>
+        <span style={{ fontSize: '16px', marginRight: '4px' }}>
+          {attackInfo.is_demon ? '⚠️' : '🛡️'}
+        </span>
+        <span style={{
+          fontWeight: 'bold',
+          color: attackInfo.is_demon ? '#c53030' : '#ed8936'
+        }}>
+          受到攻击！
+        </span>
+        <div style={{ marginTop: '4px', fontSize: '12px', color: '#4a5568' }}>
+          攻击者: {attackInfo.attacker_name} (等级 {attackInfo.attacker_level})
+          {attackInfo.is_demon && <span style={{color: '#c53030', marginLeft: '4px'}}>【魔物】</span>}
+        </div>
+      </div>
+    );
   };
 
   // 渲染元素详情
@@ -49,6 +88,7 @@ const MapView: React.FC<MapViewProps> = ({ mapData }) => {
       case 'Village':
         return (
           <>
+            {renderAttackWarning(details.under_attack)}
             <div className="detail-row">
               <span className="detail-label">人口:</span>
               <span className="detail-value">{details.population}</span>
@@ -62,6 +102,7 @@ const MapView: React.FC<MapViewProps> = ({ mapData }) => {
       case 'Faction':
         return (
           <>
+            {renderAttackWarning(details.under_attack)}
             <div className="detail-row">
               <span className="detail-label">实力等级:</span>
               <span className="detail-value">{details.power_level}</span>
@@ -86,6 +127,7 @@ const MapView: React.FC<MapViewProps> = ({ mapData }) => {
       case 'SecretRealm':
         return (
           <>
+            {renderAttackWarning(details.under_attack)}
             <div className="detail-row">
               <span className="detail-label">类型:</span>
               <span className="detail-value">{details.realm_type}</span>
@@ -111,7 +153,72 @@ const MapView: React.FC<MapViewProps> = ({ mapData }) => {
                 {details.is_demon ? '成魔' : '正常'}
               </span>
             </div>
+            {details.invading_location && (
+              <div className="detail-row" style={{
+                backgroundColor: '#fed7d7',
+                padding: '8px',
+                borderRadius: '4px',
+                marginTop: '8px',
+                marginBottom: '8px',
+                border: '2px solid #fc8181'
+              }}>
+                <span style={{ fontSize: '16px', marginRight: '4px' }}>
+                  ⚔️
+                </span>
+                <span style={{
+                  fontWeight: 'bold',
+                  color: '#c53030'
+                }}>
+                  正在入侵
+                </span>
+                <div style={{ marginTop: '4px', fontSize: '14px', color: '#2d3748' }}>
+                  目标: {details.invading_location}
+                </div>
+              </div>
+            )}
+            {details.growth_rate !== undefined && (
+              <>
+                <div className="detail-row">
+                  <span className="detail-label">成长速率:</span>
+                  <span className="detail-value">
+                    {(details.growth_rate * 100).toFixed(1)}%/回合
+                  </span>
+                </div>
+                <div className="detail-row">
+                  <span className="detail-label">升级预测:</span>
+                  <span className="detail-value" style={{
+                    color: details.growth_rate > 0.15 ? '#ed8936' : '#48bb78'
+                  }}>
+                    {details.growth_rate > 0.15 ? '⚠️ 快速' : '✓ 缓慢'}
+                  </span>
+                </div>
+                {!details.is_demon && (
+                  <div className="detail-row">
+                    <span className="detail-label">成魔风险:</span>
+                    <span className="detail-value" style={{
+                      color: (details.level || 0) > 70 ? '#c53030' : (details.level || 0) > 50 ? '#ed8936' : '#48bb78'
+                    }}>
+                      {(details.level || 0) >= 100 ? '已成魔' :
+                       (details.level || 0) > 70 ? '⚠️ 高' :
+                       (details.level || 0) > 50 ? '⚠ 中' : '✓ 低'}
+                    </span>
+                  </div>
+                )}
+              </>
+            )}
           </>
+        );
+      case 'Terrain':
+        return (
+          <div className="detail-row">
+            <span className="detail-label">地形类型:</span>
+            <span className="detail-value">
+              {details.terrain_type === 'Mountain' && '山脉 ⛰️'}
+              {details.terrain_type === 'Water' && '水域 💧'}
+              {details.terrain_type === 'Forest' && '森林 🌲'}
+              {details.terrain_type === 'Plain' && '平原 🌾'}
+            </span>
+          </div>
         );
       default:
         return null;
@@ -133,6 +240,9 @@ const MapView: React.FC<MapViewProps> = ({ mapData }) => {
               const element = getElementAt(x, y);
               const isHovered = hoveredPosition?.x === x && hoveredPosition?.y === y;
 
+              const underAttack = element?.details?.under_attack;
+              const isInvading = element?.element_type === 'Monster' && element?.details?.invading_location;
+
               return (
                 <div
                   key={`${x}-${y}`}
@@ -141,9 +251,35 @@ const MapView: React.FC<MapViewProps> = ({ mapData }) => {
                   onMouseEnter={() => setHoveredPosition({x, y})}
                   onMouseLeave={() => setHoveredPosition(null)}
                   title={element ? element.name : `(${x}, ${y})`}
+                  style={{
+                    border: underAttack ? `2px solid ${underAttack.is_demon ? '#c53030' : '#ed8936'}` :
+                            isInvading ? '2px solid #fc8181' : undefined,
+                    boxShadow: underAttack ? `0 0 10px ${underAttack.is_demon ? '#c53030' : '#ed8936'}` :
+                               isInvading ? '0 0 10px #fc8181' : undefined
+                  }}
                 >
                   {element && (
-                    <span className="tile-icon">{getElementIcon(element.element_type)}</span>
+                    <span className="tile-icon">{getElementIcon(element.element_type, element.details)}</span>
+                  )}
+                  {underAttack && (
+                    <span style={{
+                      position: 'absolute',
+                      top: '2px',
+                      right: '2px',
+                      fontSize: '12px'
+                    }}>
+                      {underAttack.is_demon ? '⚠️' : '🛡️'}
+                    </span>
+                  )}
+                  {isInvading && !underAttack && (
+                    <span style={{
+                      position: 'absolute',
+                      top: '2px',
+                      right: '2px',
+                      fontSize: '12px'
+                    }}>
+                      ⚔️
+                    </span>
                   )}
                   <span className="tile-coords">{x},{y}</span>
                 </div>
@@ -157,7 +293,7 @@ const MapView: React.FC<MapViewProps> = ({ mapData }) => {
         <div className="element-details-panel">
           <div className="details-header">
             <h3>
-              {getElementIcon(selectedElement.element_type)} {selectedElement.name}
+              {getElementIcon(selectedElement.element_type, selectedElement.details)} {selectedElement.name}
             </h3>
             <button
               className="close-btn"

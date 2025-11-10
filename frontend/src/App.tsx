@@ -18,6 +18,7 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [showMap, setShowMap] = useState(false);
   const [showPills, setShowPills] = useState(false);
+  const [notifications, setNotifications] = useState<Array<{id: number, message: string, type: string}>>([]);
 
   useEffect(() => {
     // Fetch server version on mount
@@ -68,11 +69,37 @@ function App() {
     }
   };
 
+  const addNotification = (message: string, type: string = 'success') => {
+    const id = Date.now();
+    setNotifications(prev => [...prev, {id, message, type}]);
+    setTimeout(() => {
+      setNotifications(prev => prev.filter(n => n.id !== id));
+    }, 5000);
+  };
+
   const nextTurn = async () => {
     if (!gameId) return;
     try {
       setLoading(true);
+      // 记录当前正在进行的任务
+      const currentTasks = tasks.filter(t => t.assigned_to !== null);
+
       await gameApi.nextTurn(gameId);
+      const newTasks = await gameApi.getTasks(gameId);
+
+      // 检测已完成的任务
+      currentTasks.forEach(oldTask => {
+        const stillExists = newTasks.find(t => t.id === oldTask.id);
+        if (!stillExists || stillExists.assigned_to === null) {
+          // 任务已完成
+          const disciple = disciples.find(d => d.id === oldTask.assigned_to);
+          addNotification(
+            `✅ ${disciple?.name || '弟子'} 完成了任务「${oldTask.name}」！获得修为+${oldTask.rewards.progress}`,
+            'success'
+          );
+        }
+      });
+
       await loadGameData(gameId);
     } catch (err: any) {
       setError(err.message);
@@ -164,6 +191,35 @@ function App() {
 
   return (
     <div className="App">
+      {/* 通知区域 */}
+      {notifications.length > 0 && (
+        <div style={{
+          position: 'fixed',
+          top: '20px',
+          right: '20px',
+          zIndex: 9999,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '10px',
+          maxWidth: '400px'
+        }}>
+          {notifications.map(notif => (
+            <div key={notif.id} style={{
+              background: notif.type === 'success' ? 'linear-gradient(135deg, #48bb78, #38a169)' : '#f56565',
+              color: 'white',
+              padding: '1rem 1.5rem',
+              borderRadius: '8px',
+              boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+              animation: 'slideIn 0.3s ease-out',
+              fontSize: '0.95rem',
+              fontWeight: '500'
+            }}>
+              {notif.message}
+            </div>
+          ))}
+        </div>
+      )}
+
       {APP_CONFIG.SHOW_VERSION && (
         <div className="version-badge">
           <div className="version-item">
@@ -421,10 +477,27 @@ function App() {
         <div className="tasks-section">
           <h2>任务列表 ({tasks.length})</h2>
           <div className="tasks-list">
-            {tasks.map(t => (
-              <div key={t.id} className="task-card">
+            {tasks.map(t => {
+              const isDefenseTask = t.name.includes('守卫');
+              return (
+              <div key={t.id} className="task-card" style={{
+                border: isDefenseTask ? '2px solid #f56565' : undefined,
+                background: isDefenseTask ? 'linear-gradient(135deg, #fff5f5 0%, #fed7d7 100%)' : undefined
+              }}>
                 <div className="task-header">
-                  <h3>{t.name}</h3>
+                  <h3>
+                    {isDefenseTask && '🛡️ '}
+                    {t.name}
+                    {isDefenseTask && <span style={{
+                      marginLeft: '0.5rem',
+                      fontSize: '0.75rem',
+                      background: '#f56565',
+                      color: 'white',
+                      padding: '0.125rem 0.5rem',
+                      borderRadius: '4px',
+                      fontWeight: 'bold'
+                    }}>紧急</span>}
+                  </h3>
                   <span className={`task-expiry ${t.remaining_turns <= 2 ? 'urgent' : ''}`}>
                     ⏰ {t.remaining_turns}回合后失效
                   </span>
@@ -462,22 +535,29 @@ function App() {
                   </div>
                 ) : (
                   <div className="assign-buttons">
-                    {disciples
-                      .filter(d => !tasks.some(task => task.assigned_to === d.id))
-                      .slice(0, 3)
-                      .map(d => (
-                        <button
-                          key={d.id}
-                          onClick={() => assignTask(t.id, d.id)}
-                          className="btn-small"
-                        >
-                          分配给 {d.name}
-                        </button>
-                      ))}
+                    {t.suitable_disciples && t.suitable_disciples.free.length > 0 ? (
+                      disciples
+                        .filter(d => t.suitable_disciples.free.includes(d.id))
+                        .slice(0, 3)
+                        .map(d => (
+                          <button
+                            key={d.id}
+                            onClick={() => assignTask(t.id, d.id)}
+                            className="btn-small"
+                          >
+                            分配给 {d.name}
+                          </button>
+                        ))
+                    ) : (
+                      <div style={{color: '#999', fontSize: '0.9rem'}}>
+                        {t.skill_required ? `需要技能: ${t.skill_required}` : '暂无适合的弟子'}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
-            ))}
+            );
+            })}
           </div>
         </div>
       </div>

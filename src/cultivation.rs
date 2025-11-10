@@ -78,6 +78,12 @@ impl CultivationLevel {
             CultivationLevel::Ascension => None,
         }
     }
+
+    /// 获取数值等级（用于计算）
+    /// 练气=0, 筑基=1, 结丹=2, 凝婴=3, 化神=4, 练虚=5, 飞升=6
+    pub fn to_numeric(&self) -> u32 {
+        *self as u32
+    }
 }
 
 impl std::fmt::Display for CultivationLevel {

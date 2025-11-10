@@ -61,6 +61,7 @@ pub struct Task {
     pub created_turn: u32,      // 任务创建时的回合数
     pub energy_cost: u32,       // 精力消耗（每回合）
     pub constitution_cost: u32, // 体魄消耗（每回合）
+    pub location_id: Option<String>, // 任务关联的地点ID（用于确保同一地点同一类型任务唯一性）
 }
 
 impl Task {
@@ -93,6 +94,7 @@ impl Task {
             created_turn: 0,   // 将在生成时设置
             energy_cost,
             constitution_cost,
+            location_id: None,  // 默认无地点关联
         }
     }
 
@@ -129,6 +131,7 @@ impl Task {
             created_turn,
             energy_cost,
             constitution_cost,
+            location_id: None,  // 默认无地点关联
         }
     }
 
@@ -157,6 +160,39 @@ impl Task {
                 }
             }
             _ => true,
+        }
+    }
+
+    /// 获取任务需要的技能
+    pub fn get_skill_required(&self) -> Option<String> {
+        match &self.task_type {
+            TaskType::Auxiliary(auxiliary) => {
+                auxiliary.skill_required.as_ref().map(|skill| format!("{:?}", skill))
+            }
+            _ => None,
+        }
+    }
+
+    /// 获取任务类型的字符串表示（用于比较）
+    pub fn get_task_type_str(&self) -> &'static str {
+        match &self.task_type {
+            TaskType::Gathering(_) => "Gathering",
+            TaskType::Combat(_) => "Combat",
+            TaskType::Exploration(_) => "Exploration",
+            TaskType::Auxiliary(_) => "Auxiliary",
+            TaskType::Investment(_) => "Investment",
+        }
+    }
+
+    /// 获取任务难度（用于奖励计算）
+    /// 返回难度值，范围通常为 0-100
+    pub fn get_difficulty(&self) -> u32 {
+        match &self.task_type {
+            TaskType::Gathering(g) => g.difficulty,
+            TaskType::Combat(c) => c.difficulty.max(c.enemy_level),  // 取战斗难度和敌人等级的最大值
+            TaskType::Exploration(e) => e.danger_level,
+            TaskType::Auxiliary(_) => 20,  // 辅助任务默认中等难度
+            TaskType::Investment(_) => 15,  // 投资任务难度较低
         }
     }
 }

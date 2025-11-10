@@ -107,29 +107,27 @@ impl InteractiveGame {
             task.created_turn = self.sect.year;
         }
 
-        // 过滤掉同一地点已有探索任务的新探索任务
-        use crate::task::TaskType;
-
-        // 收集当前所有探索任务的地点
-        let existing_exploration_locations: std::collections::HashSet<String> = self
+        // 过滤掉同一地点已有相同类型任务的新任务
+        // 收集当前所有任务的 (location_id, task_type) 组合
+        let existing_location_task_types: std::collections::HashSet<(String, &str)> = self
             .current_tasks
             .iter()
             .filter_map(|task| {
-                if let TaskType::Exploration(exploration) = &task.task_type {
-                    Some(exploration.location.clone())
-                } else {
-                    None
-                }
+                task.location_id
+                    .as_ref()
+                    .map(|loc_id| (loc_id.clone(), task.get_task_type_str()))
             })
             .collect();
 
-        // 过滤新任务：如果是探索任务且地点已存在，则排除
+        // 过滤新任务：如果相同的 (location_id, task_type) 组合已存在，则排除
         let filtered_tasks: Vec<_> = new_tasks
             .into_iter()
             .filter(|task| {
-                if let TaskType::Exploration(exploration) = &task.task_type {
-                    !existing_exploration_locations.contains(&exploration.location)
+                if let Some(ref loc_id) = task.location_id {
+                    let key = (loc_id.clone(), task.get_task_type_str());
+                    !existing_location_task_types.contains(&key)
                 } else {
+                    // 没有location_id的任务（如果有的话）不过滤
                     true
                 }
             })
@@ -155,6 +153,9 @@ impl InteractiveGame {
 
         // 6. 地图更新
         self.map.update();
+
+        // 7. 检查守卫任务有效性（妖魔是否已离开）
+        self.check_and_remove_invalid_defense_tasks();
 
         if !self.is_web_mode {
             UI::wait_for_enter("\n按回车键继续...");
@@ -558,6 +559,19 @@ impl InteractiveGame {
             // 从当前任务中移除已完成的任务
             self.current_tasks.retain(|t| t.id != task.id);
             self.task_assignments.retain(|a| a.task_id != task.id);
+
+            // 清除弟子的current_task
+            if let Some(disciple) = self.sect.disciples.iter_mut().find(|d| d.id == disciple_id) {
+                disciple.current_task = None;
+            }
+
+            // 清除妖魔的任务关联和解锁移动
+            self.map.clear_monster_task(task.id);
+            if task.name.contains("守卫") {
+                if let crate::task::TaskType::Combat(combat_task) = &task.task_type {
+                    self.map.unlock_monster_for_defense_task(&combat_task.enemy_name);
+                }
+            }
         }
 
         // 处理结果
@@ -733,27 +747,98 @@ impl InteractiveGame {
         }
     }
 
+    /// 检查并移除无效的守卫任务（妖魔已离开）
+    fn check_and_remove_invalid_defense_tasks(&mut self) {
+        let invalid_task_ids = self.map.check_defense_tasks_validity(&self.current_tasks);
+
+        if !invalid_task_ids.is_empty() {
+            // 收集需要解锁的任务信息（task_id, task_name, enemy_name）
+            let invalid_tasks: Vec<(usize, String, Option<String>)> = self
+                .current_tasks
+                .iter()
+                .filter(|t| invalid_task_ids.contains(&t.id))
+                .map(|t| {
+                    let enemy_name = if let crate::task::TaskType::Combat(combat_task) = &t.task_type {
+                        Some(combat_task.enemy_name.clone())
+                    } else {
+                        None
+                    };
+                    (t.id, t.name.clone(), enemy_name)
+                })
+                .collect();
+
+            // 移除无效任务
+            self.current_tasks.retain(|t| !invalid_task_ids.contains(&t.id));
+            self.task_assignments.retain(|a| !invalid_task_ids.contains(&a.task_id));
+
+            // 清除弟子的current_task和解锁妖魔
+            for (task_id, task_name, enemy_name_opt) in invalid_tasks {
+                for disciple in &mut self.sect.disciples {
+                    if let Some(ref current_task_name) = disciple.current_task {
+                        if current_task_name == &task_name {
+                            disciple.current_task = None;
+                        }
+                    }
+                }
+
+                // 清除妖魔的任务关联和解锁移动
+                self.map.clear_monster_task(task_id);
+                if let Some(enemy_name) = enemy_name_opt {
+                    self.map.unlock_monster_for_defense_task(&enemy_name);
+                }
+            }
+        }
+    }
+
     /// 检查游戏状态
     /// 移除过期任务
     fn remove_expired_tasks(&mut self) {
         let current_turn = self.sect.year;
-        let expired_task_ids: Vec<usize> = self
+        let expired_tasks: Vec<(usize, String, Option<String>)> = self
             .current_tasks
             .iter()
             .filter(|t| t.is_expired(current_turn))
-            .map(|t| t.id)
+            .map(|t| {
+                let enemy_name = if let crate::task::TaskType::Combat(combat_task) = &t.task_type {
+                    Some(combat_task.enemy_name.clone())
+                } else {
+                    None
+                };
+                (t.id, t.name.clone(), enemy_name)
+            })
             .collect();
 
-        if !expired_task_ids.is_empty() {
+        if !expired_tasks.is_empty() {
             if !self.is_web_mode {
-                UI::warning(&format!("⏰ {} 个任务已过期", expired_task_ids.len()));
+                UI::warning(&format!("⏰ {} 个任务已过期", expired_tasks.len()));
             }
+
+            let expired_task_ids: Vec<usize> = expired_tasks.iter().map(|(id, _, _)| *id).collect();
 
             // 移除过期任务
             self.current_tasks
                 .retain(|t| !expired_task_ids.contains(&t.id));
             self.task_assignments
                 .retain(|a| !expired_task_ids.contains(&a.task_id));
+
+            // 清除正在执行过期任务的弟子的current_task和解锁妖魔
+            for (task_id, task_name, enemy_name_opt) in expired_tasks {
+                for disciple in &mut self.sect.disciples {
+                    if let Some(ref current_task_name) = disciple.current_task {
+                        if current_task_name == &task_name {
+                            disciple.current_task = None;
+                        }
+                    }
+                }
+
+                // 清除妖魔的任务关联和解锁移动
+                self.map.clear_monster_task(task_id);
+                if task_name.contains("守卫") {
+                    if let Some(enemy_name) = enemy_name_opt {
+                        self.map.unlock_monster_for_defense_task(&enemy_name);
+                    }
+                }
+            }
         }
     }
 

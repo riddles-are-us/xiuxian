@@ -199,6 +199,26 @@ async fn start_turn(
                     0
                 };
 
+                // 找出适合该任务的弟子
+                let mut free_disciples = Vec::new();
+                let mut busy_disciples = Vec::new();
+
+                for disciple in &game.sect.disciples {
+                    // 检查弟子是否适合该任务（技能和修为检查）
+                    if task.is_suitable_for_disciple(disciple) {
+                        // 检查弟子是否正在执行其他任务
+                        let is_busy = game.task_assignments.iter().any(|a|
+                            a.disciple_id == Some(disciple.id) && a.task_id != task.id
+                        );
+
+                        if is_busy {
+                            busy_disciples.push(disciple.id);
+                        } else {
+                            free_disciples.push(disciple.id);
+                        }
+                    }
+                }
+
                 TaskDto {
                     id: task.id,
                     name: task.name.clone(),
@@ -209,6 +229,10 @@ async fn start_turn(
                         reputation: task.reputation_reward,
                     },
                     dao_heart_impact: task.dao_heart_impact,
+                    suitable_disciples: SuitableDisciples {
+                        free: free_disciples,
+                        busy: busy_disciples,
+                    },
                     assigned_to,
                     duration: task.duration,
                     progress,
@@ -217,6 +241,7 @@ async fn start_turn(
                     remaining_turns,
                     energy_cost: task.energy_cost,
                     constitution_cost: task.constitution_cost,
+                    skill_required: task.get_skill_required(),
                 }
             })
             .collect();
@@ -371,6 +396,26 @@ async fn get_tasks(
                     0
                 };
 
+                // 找出适合该任务的弟子
+                let mut free_disciples = Vec::new();
+                let mut busy_disciples = Vec::new();
+
+                for disciple in &game.sect.disciples {
+                    // 检查弟子是否适合该任务（技能和修为检查）
+                    if task.is_suitable_for_disciple(disciple) {
+                        // 检查弟子是否正在执行其他任务
+                        let is_busy = game.task_assignments.iter().any(|a|
+                            a.disciple_id == Some(disciple.id) && a.task_id != task.id
+                        );
+
+                        if is_busy {
+                            busy_disciples.push(disciple.id);
+                        } else {
+                            free_disciples.push(disciple.id);
+                        }
+                    }
+                }
+
                 TaskDto {
                     id: task.id,
                     name: task.name.clone(),
@@ -381,6 +426,10 @@ async fn get_tasks(
                         reputation: task.reputation_reward,
                     },
                     dao_heart_impact: task.dao_heart_impact,
+                    suitable_disciples: SuitableDisciples {
+                        free: free_disciples,
+                        busy: busy_disciples,
+                    },
                     assigned_to,
                     duration: task.duration,
                     progress,
@@ -389,6 +438,7 @@ async fn get_tasks(
                     remaining_turns,
                     energy_cost: task.energy_cost,
                     constitution_cost: task.constitution_cost,
+                    skill_required: task.get_skill_required(),
                 }
             })
             .collect();
@@ -415,50 +465,62 @@ async fn assign_task(
         let mut game = game_mutex.lock().await;
 
         // 检查任务是否存在
-        if game.current_tasks.iter().any(|t| t.id == task_id) {
+        if let Some(task) = game.current_tasks.iter().find(|t| t.id == task_id) {
             // 检查弟子是否存在
-            if !game.sect.alive_disciples().iter().any(|d| d.id == req.disciple_id) {
-                return (
+            if let Some(disciple) = game.sect.disciples.iter().find(|d| d.id == req.disciple_id) {
+                // 检查弟子是否适合该任务
+                if !task.is_suitable_for_disciple(disciple) {
+                    return (
+                        StatusCode::BAD_REQUEST,
+                        Json(ApiResponse::<AssignTaskResponse>::error(
+                            "DISCIPLE_NOT_SUITABLE".to_string(),
+                            format!("弟子 {} 不适合该任务（可能缺少所需技能或修为不足）", disciple.name),
+                        )),
+                    );
+                }
+
+                // 克隆守卫任务相关信息以避免借用冲突
+                let enemy_name_opt = if task.name.contains("守卫") {
+                    if let crate::task::TaskType::Combat(combat_task) = &task.task_type {
+                        Some(combat_task.enemy_name.clone())
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+
+                // 在 task_assignments 中找到对应的分配记录
+                if let Some(assignment) = game.task_assignments.iter_mut().find(|a| a.task_id == task_id) {
+                    assignment.disciple_id = Some(req.disciple_id);
+
+                    // 如果是守卫任务，锁定妖魔的移动
+                    if let Some(enemy_name) = enemy_name_opt {
+                        game.map.lock_monster_for_defense_task(&enemy_name);
+                    }
+
+                    let response = AssignTaskResponse {
+                        task_id,
+                        disciple_id: req.disciple_id,
+                        message: "任务分配成功".to_string(),
+                    };
+
+                    (StatusCode::OK, Json(ApiResponse::ok(response)))
+                } else {
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(ApiResponse::<AssignTaskResponse>::error(
+                            "ASSIGNMENT_NOT_FOUND".to_string(),
+                            "任务分配记录不存在".to_string(),
+                        )),
+                    )
+                }
+            } else {
+                (
                     StatusCode::NOT_FOUND,
                     Json(ApiResponse::<AssignTaskResponse>::error(
                         "DISCIPLE_NOT_FOUND".to_string(),
                         "弟子不存在".to_string(),
-                    )),
-                );
-            }
-
-            // 检查弟子是否已经被分配到其他任务
-            let is_busy = game.task_assignments.iter().any(|a| {
-                a.disciple_id == Some(req.disciple_id) && a.task_id != task_id
-            });
-
-            if is_busy {
-                return (
-                    StatusCode::CONFLICT,
-                    Json(ApiResponse::<AssignTaskResponse>::error(
-                        "DISCIPLE_BUSY".to_string(),
-                        "该弟子已被分配到其他任务".to_string(),
-                    )),
-                );
-            }
-
-            // 在 task_assignments 中找到对应的分配记录
-            if let Some(assignment) = game.task_assignments.iter_mut().find(|a| a.task_id == task_id) {
-                assignment.disciple_id = Some(req.disciple_id);
-
-                let response = AssignTaskResponse {
-                    task_id,
-                    disciple_id: req.disciple_id,
-                    message: "任务分配成功".to_string(),
-                };
-
-                (StatusCode::OK, Json(ApiResponse::ok(response)))
-            } else {
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(ApiResponse::<AssignTaskResponse>::error(
-                        "ASSIGNMENT_NOT_FOUND".to_string(),
-                        "任务分配记录不存在".to_string(),
                     )),
                 )
             }
@@ -491,10 +553,27 @@ async fn unassign_task(
         let mut game = game_mutex.lock().await;
 
         // 检查任务是否存在
-        if game.current_tasks.iter().any(|t| t.id == task_id) {
+        if let Some(task) = game.current_tasks.iter().find(|t| t.id == task_id) {
+            // 克隆守卫任务相关信息以避免借用冲突
+            let enemy_name_opt = if task.name.contains("守卫") {
+                if let crate::task::TaskType::Combat(combat_task) = &task.task_type {
+                    Some(combat_task.enemy_name.clone())
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
             // 在 task_assignments 中找到对应的分配记录
             if let Some(assignment) = game.task_assignments.iter_mut().find(|a| a.task_id == task_id) {
                 assignment.disciple_id = None;
+
+                // 如果是守卫任务，解锁妖魔的移动
+                if let Some(enemy_name) = enemy_name_opt {
+                    game.map.unlock_monster_for_defense_task(&enemy_name);
+                }
+
                 (StatusCode::OK, Json(ApiResponse::ok("取消成功".to_string())))
             } else {
                 (
@@ -677,10 +756,32 @@ async fn get_map(
         let game = game_mutex.lock().await;
 
         use crate::map::MapElement;
+        use std::collections::HashMap;
 
+        // 第一步：收集所有妖魔的入侵信息
+        let mut attacks: HashMap<String, AttackInfo> = HashMap::new();
+        for positioned in &game.map.elements {
+            if let MapElement::Monster(monster) = &positioned.element {
+                if let Some(ref invaded_location_id) = monster.invaded_location_id {
+                    attacks.insert(
+                        invaded_location_id.clone(),
+                        AttackInfo {
+                            attacker_name: format!("{}#{}", monster.name, monster.id),
+                            attacker_level: monster.level,
+                            is_demon: monster.is_demon,
+                        },
+                    );
+                }
+            }
+        }
+
+        // 第二步：遍历所有元素，为被攻击的元素添加攻击信息
         let elements: Vec<MapElementDto> = game.map.elements
             .iter()
             .map(|positioned| {
+                let location_id = positioned.element.get_location_id();
+                let under_attack = attacks.get(&location_id).cloned();
+
                 let (element_type, name, details) = match &positioned.element {
                     MapElement::Village(v) => (
                         "Village".to_string(),
@@ -688,6 +789,7 @@ async fn get_map(
                         MapElementDetails::Village {
                             population: v.population,
                             prosperity: v.prosperity,
+                            under_attack,
                         },
                     ),
                     MapElement::Faction(f) => (
@@ -696,6 +798,7 @@ async fn get_map(
                         MapElementDetails::Faction {
                             power_level: f.power_level,
                             relationship: f.relationship,
+                            under_attack,
                         },
                     ),
                     MapElement::DangerousLocation(d) => (
@@ -711,6 +814,7 @@ async fn get_map(
                         MapElementDetails::SecretRealm {
                             realm_type: format!("{:?}", s.realm_type),
                             difficulty: s.difficulty,
+                            under_attack,
                         },
                     ),
                     MapElement::Monster(m) => (
@@ -719,6 +823,15 @@ async fn get_map(
                         MapElementDetails::Monster {
                             level: m.level,
                             is_demon: m.is_demon,
+                            growth_rate: m.growth_rate,
+                            invading_location: m.invaded_location_id.clone(),
+                        },
+                    ),
+                    MapElement::Terrain(t) => (
+                        "Terrain".to_string(),
+                        t.name.clone(),
+                        MapElementDetails::Terrain {
+                            terrain_type: format!("{:?}", t.terrain_type),
                         },
                     ),
                 };

@@ -1,0 +1,162 @@
+{
+  "villages": [
+    {
+      "name": "清风镇",
+      "population": 1000,
+      "prosperity": 50,
+      "position": {
+        "x": 5,
+        "y": 5
+      },
+      "task_templates": [
+        {
+          "name_template": "在{name}采集灵药",
+          "task_type": "Gathering",
+          "progress_reward": 5,
+          "resource_reward": 10,
+          "reputation_reward": 5,
+          "dao_heart_impact": 0,
+          "resource_type": "灵药",
+          "difficulty": 1,
+          "danger_level": null,
+          "skill_required": null
+        },
+        {
+          "name_template": "守卫{name}",
+          "task_type": "Auxiliary",
+          "progress_reward": 3,
+          "resource_reward": 5,
+          "reputation_reward": 10,
+          "dao_heart_impact": 2,
+          "resource_type": null,
+          "difficulty": null,
+          "danger_level": null,
+          "skill_required": null
+        },
+        {
+          "name_template": "在{name}行医",
+          "task_type": "Auxiliary",
+          "progress_reward": 5,
+          "resource_reward": 8,
+          "reputation_reward": 15,
+          "dao_heart_impact": 5,
+          "resource_type": null,
+          "difficulty": null,
+          "danger_level": null,
+          "skill_required": "Medical"
+        }
+      ]
+    },
+    {
+      "name": "灵泉村",
+      "population": 500,
+      "prosperity": 30,
+      "position": {
+        "x": 15,
+        "y": 8
+      },
+      "task_templates": [
+        {
+          "name_template": "在{name}采集灵泉",
+          "task_type": "Gathering",
+          "progress_reward": 8,
+          "resource_reward": 15,
+          "reputation_reward": 10,
+          "dao_heart_impact": 0,
+          "resource_type": "灵泉",
+          "difficulty": 2,
+          "danger_level": null,
+          "skill_required": null
+        }
+      ]
+    }
+  ],
+  "factions": [
+    {
+      "name": "青云派",
+      "power_level": 3,
+      "relationship": 20,
+      "position": {
+        "x": 10,
+        "y": 10
+      },
+      "friendly_task_templates": [
+        {
+          "name_template": "与{name}交流",
+          "task_type": "Auxiliary",
+          "progress_reward": 8,
+          "resource_reward": 15,
+          "reputation_reward": 20,
+          "dao_heart_impact": 0,
+          "resource_type": null,
+          "difficulty": null,
+          "danger_level": null,
+          "skill_required": null
+        }
+      ],
+      "hostile_task_templates": [
+        {
+          "name_template": "镇压{name}",
+          "task_type": "Combat",
+          "progress_reward": 15,
+          "resource_reward": 30,
+          "reputation_reward": 30,
+          "dao_heart_impact": -5,
+          "resource_type": null,
+          "difficulty": 3,
+          "danger_level": null,
+          "skill_required": null
+        }
+      ]
+    }
+  ],
+  "dangerous_locations": [
+    {
+      "name": "迷雾森林",
+      "danger_level": 20,
+      "position": {
+        "x": 3,
+        "y": 15
+      },
+      "task_templates": [
+        {
+          "name_template": "游历{name}",
+          "task_type": "Exploration",
+          "progress_reward": 10,
+          "resource_reward": 20,
+          "reputation_reward": 0,
+          "dao_heart_impact": 0,
+          "resource_type": null,
+          "difficulty": null,
+          "danger_level": 20,
+          "skill_required": null
+        }
+      ]
+    }
+  ],
+  "secret_realms": [
+    {
+      "name": "火焰洞窟",
+      "realm_type": "Fire",
+      "difficulty": 30,
+      "position": {
+        "x": 17,
+        "y": 3
+      },
+      "task_templates": [
+        {
+          "name_template": "探索秘境：{name}",
+          "task_type": "Exploration",
+          "progress_reward": 20,
+          "resource_reward": 50,
+          "reputation_reward": 0,
+          "dao_heart_impact": 0,
+          "resource_type": null,
+          "difficulty": null,
+          "danger_level": 30,
+          "skill_required": null
+        }
+      ]
+    }
+  ]
+}

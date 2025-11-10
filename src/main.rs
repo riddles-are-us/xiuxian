@@ -11,6 +11,7 @@ mod api_types;
 mod web_server;
 mod version;
 mod pill;
+mod config;
 
 use interactive::InteractiveGame;
 use ui::UI;

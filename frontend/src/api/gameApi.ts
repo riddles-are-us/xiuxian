@@ -73,6 +73,13 @@ export interface Task {
   remaining_turns: number;
   energy_cost: number;        // 精力消耗（每回合）
   constitution_cost: number;   // 体魄消耗（每回合）
+  skill_required: string | null;  // 需要的技能
+}
+
+export interface AttackInfo {
+  attacker_name: string;
+  attacker_level: number;
+  is_demon: boolean;
 }
 
 export interface MapElement {
@@ -86,6 +93,7 @@ export interface MapElement {
     type: string;
     population?: number;
     prosperity?: number;
+    under_attack?: AttackInfo;  // 受攻击信息（村庄、势力、秘境）
     power_level?: number;
     relationship?: number;
     danger_level?: number;
@@ -93,6 +101,9 @@ export interface MapElement {
     difficulty?: number;
     level?: number;
     is_demon?: boolean;
+    growth_rate?: number;  // 成长速率 (每回合升级概率)
+    invading_location?: string;  // 妖魔正在入侵的地点ID
+    terrain_type?: string;  // 地形类型：Mountain, Water, Forest, Plain
   };
 }
 

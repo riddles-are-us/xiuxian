@@ -1,0 +1,67 @@
+{
+  "monster_templates": [
+    {
+      "name": "噬魂虎",
+      "level": 2,
+      "is_demon": false,
+      "growth_rate": 0.1,
+      "position": {
+        "x": 8,
+        "y": 12
+      },
+      "task_templates": [
+        {
+          "name_template": "讨伐{name}",
+          "task_type": "Combat",
+          "progress_reward": 15,
+          "resource_reward": 40,
+          "reputation_reward": 25,
+          "dao_heart_impact": 3,
+          "resource_type": null,
+          "difficulty": 2,
+          "danger_level": null,
+          "skill_required": null
+        }
+      ]
+    },
+    {
+      "name": "血影狼",
+      "level": 3,
+      "is_demon": false,
+      "growth_rate": 0.15,
+      "position": {
+        "x": 12,
+        "y": 16
+      },
+      "task_templates": [
+        {
+          "name_template": "讨伐{name}",
+          "task_type": "Combat",
+          "progress_reward": 20,
+          "resource_reward": 50,
+          "reputation_reward": 30,
+          "dao_heart_impact": 3,
+          "resource_type": null,
+          "difficulty": 3,
+          "danger_level": null,
+          "skill_required": null
+        }
+      ]
+    }
+  ],
+  "spawn_rules": {
+    "spawn_chance": 0.2,
+    "level_range": [
+      1,
+      5
+    ],
+    "random_names": [
+      "妖兽",
+      "魔狼",
+      "邪灵",
+      "凶兽",
+      "妖虎",
+      "魔猿"
+    ]
+  }
+}
