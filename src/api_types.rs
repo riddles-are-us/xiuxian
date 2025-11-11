@@ -219,6 +219,7 @@ pub struct TaskDto {
     pub energy_cost: u32,        // 精力消耗（每回合）
     pub constitution_cost: u32,   // 体魄消耗（每回合）
     pub skill_required: Option<String>,  // 需要的技能
+    pub suitable_disciples: SuitableDisciples,  // 合适的弟子
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -226,6 +227,13 @@ pub struct TaskRewards {
     pub progress: u32,
     pub resources: u32,
     pub reputation: i32,
+}
+
+/// 合适的弟子列表
+#[derive(Debug, Serialize, Clone)]
+pub struct SuitableDisciples {
+    pub free: Vec<usize>,  // 空闲的合适弟子ID
+    pub busy: Vec<usize>,  // 忙碌的合适弟子ID
 }
 
 /// 任务分配请求

@@ -560,11 +560,6 @@ impl InteractiveGame {
             self.current_tasks.retain(|t| t.id != task.id);
             self.task_assignments.retain(|a| a.task_id != task.id);
 
-            // 清除弟子的current_task
-            if let Some(disciple) = self.sect.disciples.iter_mut().find(|d| d.id == disciple_id) {
-                disciple.current_task = None;
-            }
-
             // 清除妖魔的任务关联和解锁移动
             self.map.clear_monster_task(task.id);
             if task.name.contains("守卫") {
@@ -773,14 +768,6 @@ impl InteractiveGame {
 
             // 清除弟子的current_task和解锁妖魔
             for (task_id, task_name, enemy_name_opt) in invalid_tasks {
-                for disciple in &mut self.sect.disciples {
-                    if let Some(ref current_task_name) = disciple.current_task {
-                        if current_task_name == &task_name {
-                            disciple.current_task = None;
-                        }
-                    }
-                }
-
                 // 清除妖魔的任务关联和解锁移动
                 self.map.clear_monster_task(task_id);
                 if let Some(enemy_name) = enemy_name_opt {
@@ -821,16 +808,8 @@ impl InteractiveGame {
             self.task_assignments
                 .retain(|a| !expired_task_ids.contains(&a.task_id));
 
-            // 清除正在执行过期任务的弟子的current_task和解锁妖魔
+            // 清除正在执行过期任务的弟子和解锁妖魔
             for (task_id, task_name, enemy_name_opt) in expired_tasks {
-                for disciple in &mut self.sect.disciples {
-                    if let Some(ref current_task_name) = disciple.current_task {
-                        if current_task_name == &task_name {
-                            disciple.current_task = None;
-                        }
-                    }
-                }
-
                 // 清除妖魔的任务关联和解锁移动
                 self.map.clear_monster_task(task_id);
                 if task_name.contains("守卫") {

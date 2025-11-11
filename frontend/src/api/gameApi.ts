@@ -74,6 +74,10 @@ export interface Task {
   energy_cost: number;        // 精力消耗（每回合）
   constitution_cost: number;   // 体魄消耗（每回合）
   skill_required: string | null;  // 需要的技能
+  suitable_disciples: {       // 合适的弟子
+    free: number[];           // 空闲的合适弟子ID
+    busy: number[];           // 忙碌的合适弟子ID
+  };
 }
 
 export interface AttackInfo {

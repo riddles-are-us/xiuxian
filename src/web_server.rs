@@ -229,10 +229,6 @@ async fn start_turn(
                         reputation: task.reputation_reward,
                     },
                     dao_heart_impact: task.dao_heart_impact,
-                    suitable_disciples: SuitableDisciples {
-                        free: free_disciples,
-                        busy: busy_disciples,
-                    },
                     assigned_to,
                     duration: task.duration,
                     progress,
@@ -242,6 +238,10 @@ async fn start_turn(
                     energy_cost: task.energy_cost,
                     constitution_cost: task.constitution_cost,
                     skill_required: task.get_skill_required(),
+                    suitable_disciples: SuitableDisciples {
+                        free: free_disciples,
+                        busy: busy_disciples,
+                    },
                 }
             })
             .collect();
@@ -426,10 +426,6 @@ async fn get_tasks(
                         reputation: task.reputation_reward,
                     },
                     dao_heart_impact: task.dao_heart_impact,
-                    suitable_disciples: SuitableDisciples {
-                        free: free_disciples,
-                        busy: busy_disciples,
-                    },
                     assigned_to,
                     duration: task.duration,
                     progress,
@@ -439,6 +435,10 @@ async fn get_tasks(
                     energy_cost: task.energy_cost,
                     constitution_cost: task.constitution_cost,
                     skill_required: task.get_skill_required(),
+                    suitable_disciples: SuitableDisciples {
+                        free: free_disciples,
+                        busy: busy_disciples,
+                    },
                 }
             })
             .collect();

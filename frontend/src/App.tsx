@@ -534,20 +534,72 @@ function App() {
                     )}
                   </div>
                 ) : (
-                  <div className="assign-buttons">
-                    {t.suitable_disciples && t.suitable_disciples.free.length > 0 ? (
-                      disciples
-                        .filter(d => t.suitable_disciples.free.includes(d.id))
-                        .slice(0, 3)
-                        .map(d => (
-                          <button
-                            key={d.id}
-                            onClick={() => assignTask(t.id, d.id)}
-                            className="btn-small"
-                          >
-                            分配给 {d.name}
-                          </button>
-                        ))
+                  <div className="assign-section">
+                    {t.suitable_disciples && (t.suitable_disciples.free.length > 0 || t.suitable_disciples.busy.length > 0) ? (
+                      <>
+                        {/* 合适的统计信息 */}
+                        <div style={{
+                          fontSize: '0.85rem',
+                          color: '#666',
+                          marginBottom: '0.5rem',
+                          paddingBottom: '0.5rem',
+                          borderBottom: '1px solid #eee'
+                        }}>
+                          合适弟子: <span style={{color: '#48bb78', fontWeight: 'bold'}}>{t.suitable_disciples.free.length} 空闲</span>
+                          {t.suitable_disciples.busy.length > 0 && (
+                            <>, <span style={{color: '#ed8936', fontWeight: 'bold'}}>{t.suitable_disciples.busy.length} 忙碌</span></>
+                          )}
+                        </div>
+
+                        {/* 空闲的合适弟子 */}
+                        {t.suitable_disciples.free.length > 0 && (
+                          <div className="assign-buttons">
+                            {disciples
+                              .filter(d => t.suitable_disciples.free.includes(d.id))
+                              .map(d => (
+                                <button
+                                  key={d.id}
+                                  onClick={() => assignTask(t.id, d.id)}
+                                  className="btn-small"
+                                  title={`${d.name} - ${d.cultivation.level} ${d.cultivation.sub_level}`}
+                                >
+                                  ✓ {d.name}
+                                </button>
+                              ))
+                            }
+                          </div>
+                        )}
+
+                        {/* 忙碌的合适弟子 */}
+                        {t.suitable_disciples.busy.length > 0 && (
+                          <div style={{marginTop: '0.5rem'}}>
+                            <div style={{fontSize: '0.8rem', color: '#999', marginBottom: '0.3rem'}}>
+                              忙碌中:
+                            </div>
+                            <div style={{display: 'flex', flexWrap: 'wrap', gap: '0.3rem'}}>
+                              {disciples
+                                .filter(d => t.suitable_disciples.busy.includes(d.id))
+                                .map(d => (
+                                  <span
+                                    key={d.id}
+                                    style={{
+                                      fontSize: '0.75rem',
+                                      padding: '0.2rem 0.5rem',
+                                      background: '#f7fafc',
+                                      color: '#718096',
+                                      borderRadius: '4px',
+                                      border: '1px solid #e2e8f0'
+                                    }}
+                                    title={`${d.name} 正在执行其他任务`}
+                                  >
+                                    ⏳ {d.name}
+                                  </span>
+                                ))
+                              }
+                            </div>
+                          </div>
+                        )}
+                      </>
                     ) : (
                       <div style={{color: '#999', fontSize: '0.9rem'}}>
                         {t.skill_required ? `需要技能: ${t.skill_required}` : '暂无适合的弟子'}
