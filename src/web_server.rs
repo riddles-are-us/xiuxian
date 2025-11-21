@@ -62,6 +62,8 @@ pub fn create_router() -> Router {
         // 弟子管理
         .route("/api/game/:game_id/disciples", get(get_disciples))
         .route("/api/game/:game_id/disciples/:disciple_id", get(get_disciple))
+        .route("/api/game/:game_id/recruit", post(recruit_disciple))
+        .route("/api/game/:game_id/disciples/:disciple_id/move", post(move_disciple))
 
         // 任务管理
         .route("/api/game/:game_id/tasks", get(get_tasks))
@@ -82,6 +84,10 @@ pub fn create_router() -> Router {
         // 丹药
         .route("/api/game/:game_id/pills", get(get_pill_inventory))
         .route("/api/game/:game_id/pills/use", post(use_pill))
+
+        // 建筑
+        .route("/api/game/:game_id/buildings", get(get_building_tree))
+        .route("/api/game/:game_id/buildings/build", post(build_building))
 
         .layer(CorsLayer::new()
             .allow_origin(Any)
@@ -219,6 +225,30 @@ async fn start_turn(
                     }
                 }
 
+                // 提取敌人信息（如果是战斗任务）
+                let enemy_info = if let crate::task::TaskType::Combat(combat_task) = &task.task_type {
+                    // 从enemy_name中提取ID和名称（格式："{名称}#{ID}"）
+                    let enemy_name_full = &combat_task.enemy_name;
+                    if let Some(pos) = enemy_name_full.rfind('#') {
+                        let enemy_name = enemy_name_full[..pos].to_string();
+                        let enemy_id = format!("monster_{}", &enemy_name_full[pos+1..]);
+                        Some(EnemyInfo {
+                            enemy_id,
+                            enemy_name,
+                            enemy_level: combat_task.enemy_level,
+                        })
+                    } else {
+                        // 如果没有ID，只返回名称
+                        Some(EnemyInfo {
+                            enemy_id: "unknown".to_string(),
+                            enemy_name: enemy_name_full.clone(),
+                            enemy_level: combat_task.enemy_level,
+                        })
+                    }
+                } else {
+                    None
+                };
+
                 TaskDto {
                     id: task.id,
                     name: task.name.clone(),
@@ -242,6 +272,8 @@ async fn start_turn(
                         free: free_disciples,
                         busy: busy_disciples,
                     },
+                    enemy_info,
+                    position: task.position.as_ref().map(|p| PositionDto { x: p.x, y: p.y }),
                 }
             })
             .collect();
@@ -252,11 +284,15 @@ async fn start_turn(
             .map(|d| (*d).into())
             .collect();
 
+        // 获取待招募弟子信息
+        let pending_recruitment = game.pending_recruitment.as_ref().map(|d| d.into());
+
         let response = TurnStartResponse {
             year: game.sect.year,
             events,
             tasks,
             disciples,
+            pending_recruitment,
         };
 
         (StatusCode::OK, Json(ApiResponse::ok(response)))
@@ -375,6 +411,180 @@ async fn get_disciple(
     }
 }
 
+/// 招募弟子（接受或拒绝）
+async fn recruit_disciple(
+    State(store): State<AppState>,
+    Path(game_id): Path<String>,
+    Json(req): Json<RecruitDiscipleRequest>,
+) -> impl IntoResponse {
+    const RECRUITMENT_COST: u32 = 1000;
+
+    if let Some(game_mutex) = store.get_game(&game_id) {
+        let mut game = game_mutex.lock().await;
+
+        // 检查是否有待招募的弟子
+        if let Some(disciple) = game.pending_recruitment.take() {
+            if req.accept {
+                // 检查资源是否足够
+                let resources_before = game.sect.resources;
+                if resources_before < RECRUITMENT_COST {
+                    // 资源不足，放回pending
+                    game.pending_recruitment = Some(disciple);
+                    return (
+                        StatusCode::BAD_REQUEST,
+                        Json(ApiResponse::<RecruitDiscipleResponse>::error(
+                            "INSUFFICIENT_RESOURCES".to_string(),
+                            format!("资源不足，需要{}资源", RECRUITMENT_COST),
+                        )),
+                    );
+                }
+
+                // 扣除资源
+                game.sect.resources -= RECRUITMENT_COST;
+                let resources_after = game.sect.resources;
+
+                // 添加弟子
+                let disciple_dto: DiscipleDto = (&disciple).into();
+                game.sect.recruit_disciple(disciple);
+
+                let response = RecruitDiscipleResponse {
+                    success: true,
+                    message: format!("成功招募弟子「{}」", disciple_dto.name),
+                    disciple: Some(disciple_dto),
+                    resources_before,
+                    resources_after,
+                    cost: RECRUITMENT_COST,
+                };
+
+                (StatusCode::OK, Json(ApiResponse::ok(response)))
+            } else {
+                // 用户拒绝招募
+                let response = RecruitDiscipleResponse {
+                    success: true,
+                    message: "已拒绝招募".to_string(),
+                    disciple: None,
+                    resources_before: game.sect.resources,
+                    resources_after: game.sect.resources,
+                    cost: 0,
+                };
+
+                (StatusCode::OK, Json(ApiResponse::ok(response)))
+            }
+        } else {
+            // 没有待招募的弟子
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ApiResponse::<RecruitDiscipleResponse>::error(
+                    "NO_PENDING_RECRUITMENT".to_string(),
+                    "当前没有待招募的弟子".to_string(),
+                )),
+            )
+        }
+    } else {
+        (
+            StatusCode::NOT_FOUND,
+            Json(ApiResponse::<RecruitDiscipleResponse>::error(
+                "GAME_NOT_FOUND".to_string(),
+                "游戏不存在".to_string(),
+            )),
+        )
+    }
+}
+
+/// 移动弟子
+async fn move_disciple(
+    State(store): State<AppState>,
+    Path((game_id, disciple_id)): Path<(String, usize)>,
+    Json(req): Json<MoveDiscipleRequest>,
+) -> impl IntoResponse {
+    if let Some(game_mutex) = store.get_game(&game_id) {
+        let mut game = game_mutex.lock().await;
+
+        // 查找弟子
+        if let Some(disciple) = game.sect.disciples.iter_mut().find(|d| d.id == disciple_id) {
+            let old_position = PositionDto {
+                x: disciple.position.x,
+                y: disciple.position.y,
+            };
+
+            // 计算距离（曼哈顿距离）
+            let distance = ((req.x as i32 - disciple.position.x as i32).abs()
+                + (req.y as i32 - disciple.position.y as i32).abs()) as u32;
+
+            // 检查移动距离是否在范围内
+            let max_range = disciple.cultivation.current_level.movement_range();
+            if distance > max_range {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(ApiResponse::<MoveDiscipleResponse>::error(
+                        "MOVEMENT_OUT_OF_RANGE".to_string(),
+                        format!(
+                            "移动距离({})超出范围！{}的最大移动距离为{}格",
+                            distance, disciple.name, max_range
+                        ),
+                    )),
+                );
+            }
+
+            // 检查本回合剩余移动距离
+            if distance > disciple.moves_remaining {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(ApiResponse::<MoveDiscipleResponse>::error(
+                        "INSUFFICIENT_MOVES".to_string(),
+                        format!(
+                            "本回合移动距离不足！需要{}格，剩余{}格",
+                            distance, disciple.moves_remaining
+                        ),
+                    )),
+                );
+            }
+
+            // 扣除移动距离
+            disciple.moves_remaining -= distance;
+
+            // 更新位置
+            let new_position = crate::map::Position {
+                x: req.x,
+                y: req.y,
+            };
+            disciple.move_to(new_position);
+
+            let new_position_dto = PositionDto {
+                x: req.x,
+                y: req.y,
+            };
+
+            let response = MoveDiscipleResponse {
+                success: true,
+                message: format!("{}已移动至({}, {})", disciple.name, req.x, req.y),
+                disciple_id: disciple.id,
+                disciple_name: disciple.name.clone(),
+                old_position,
+                new_position: new_position_dto,
+            };
+
+            (StatusCode::OK, Json(ApiResponse::ok(response)))
+        } else {
+            (
+                StatusCode::NOT_FOUND,
+                Json(ApiResponse::<MoveDiscipleResponse>::error(
+                    "DISCIPLE_NOT_FOUND".to_string(),
+                    "弟子不存在".to_string(),
+                )),
+            )
+        }
+    } else {
+        (
+            StatusCode::NOT_FOUND,
+            Json(ApiResponse::<MoveDiscipleResponse>::error(
+                "GAME_NOT_FOUND".to_string(),
+                "游戏不存在".to_string(),
+            )),
+        )
+    }
+}
+
 /// 获取任务列表
 async fn get_tasks(
     State(store): State<AppState>,
@@ -416,6 +626,30 @@ async fn get_tasks(
                     }
                 }
 
+                // 提取敌人信息（如果是战斗任务）
+                let enemy_info = if let crate::task::TaskType::Combat(combat_task) = &task.task_type {
+                    // 从enemy_name中提取ID和名称（格式："{名称}#{ID}"）
+                    let enemy_name_full = &combat_task.enemy_name;
+                    if let Some(pos) = enemy_name_full.rfind('#') {
+                        let enemy_name = enemy_name_full[..pos].to_string();
+                        let enemy_id = format!("monster_{}", &enemy_name_full[pos+1..]);
+                        Some(EnemyInfo {
+                            enemy_id,
+                            enemy_name,
+                            enemy_level: combat_task.enemy_level,
+                        })
+                    } else {
+                        // 如果没有ID，只返回名称
+                        Some(EnemyInfo {
+                            enemy_id: "unknown".to_string(),
+                            enemy_name: enemy_name_full.clone(),
+                            enemy_level: combat_task.enemy_level,
+                        })
+                    }
+                } else {
+                    None
+                };
+
                 TaskDto {
                     id: task.id,
                     name: task.name.clone(),
@@ -439,6 +673,8 @@ async fn get_tasks(
                         free: free_disciples,
                         busy: busy_disciples,
                     },
+                    enemy_info,
+                    position: task.position.as_ref().map(|p| PositionDto { x: p.x, y: p.y }),
                 }
             })
             .collect();
@@ -477,6 +713,21 @@ async fn assign_task(
                             format!("弟子 {} 不适合该任务（可能缺少所需技能或修为不足）", disciple.name),
                         )),
                     );
+                }
+
+                // 检查弟子是否在任务位置
+                if let Some(task_pos) = &task.position {
+                    if disciple.position.x != task_pos.x || disciple.position.y != task_pos.y {
+                        return (
+                            StatusCode::BAD_REQUEST,
+                            Json(ApiResponse::<AssignTaskResponse>::error(
+                                "DISCIPLE_NOT_AT_LOCATION".to_string(),
+                                format!("弟子 {} 不在任务位置({}, {})，当前位置({}, {})",
+                                    disciple.name, task_pos.x, task_pos.y,
+                                    disciple.position.x, disciple.position.y),
+                            )),
+                        );
+                    }
                 }
 
                 // 克隆守卫任务相关信息以避免借用冲突
@@ -996,6 +1247,188 @@ async fn use_pill(
         (
             StatusCode::NOT_FOUND,
             Json(ApiResponse::<UsePillResponse>::error(
+                "GAME_NOT_FOUND".to_string(),
+                "游戏不存在".to_string(),
+            )),
+        )
+    }
+}
+
+/// GET /api/game/:game_id/buildings - 获取建筑树信息
+async fn get_building_tree(
+    State(store): State<AppState>,
+    Path(game_id): Path<String>,
+) -> impl IntoResponse {
+    if let Some(game_mutex) = store.get_game(&game_id) {
+        let game = game_mutex.lock().await;
+
+        if let Some(ref tree) = game.sect.building_tree {
+            // 转换所有建筑为DTO
+            let buildings: Vec<BuildingDto> = tree.buildings.values().map(|b| {
+                let actual_cost = tree.calculate_build_cost(&b.id).unwrap_or(0);
+                let can_build = tree.can_build(&b.id).is_ok();
+
+                // 生成效果描述（包含具体数值）
+                let effects: Vec<String> = b.conditional_modifiers.iter().map(|cm| {
+                    use crate::modifier::{ModifierTarget, ModifierApplication};
+
+                    let target_name = match &cm.modifier.target {
+                        ModifierTarget::DaoHeart => "道心",
+                        ModifierTarget::Energy => "精力",
+                        ModifierTarget::Constitution => "体魄",
+                        ModifierTarget::TalentBonus(_) => "天赋加成",
+                        ModifierTarget::TribulationSuccessRate => "渡劫成功率",
+                        ModifierTarget::TaskReward => "任务奖励",
+                        ModifierTarget::TaskSuitability => "任务适配度",
+                        ModifierTarget::TaskDifficulty => "任务难度",
+                        ModifierTarget::Income => "收入",
+                        ModifierTarget::EnergyConsumption => "精力消耗",
+                        ModifierTarget::ConstitutionConsumption => "体魄消耗",
+                        ModifierTarget::CultivationSpeed => "修炼速度",
+                    };
+
+                    let value_str = match &cm.modifier.application {
+                        ModifierApplication::Additive(v) => {
+                            if *v >= 0.0 {
+                                format!("+{}", v)
+                            } else {
+                                format!("{}", v)
+                            }
+                        },
+                        ModifierApplication::Multiplicative(v) => {
+                            let percent = (v * 100.0) as i32;
+                            if percent >= 0 {
+                                format!("+{}%", percent)
+                            } else {
+                                format!("{}%", percent)
+                            }
+                        },
+                        ModifierApplication::Override(v) => format!("={}", v),
+                    };
+
+                    format!("{} {}", target_name, value_str)
+                }).collect();
+
+                BuildingDto {
+                    id: b.id.clone(),
+                    name: b.name.clone(),
+                    description: b.description.clone(),
+                    base_cost: b.base_cost,
+                    actual_cost,
+                    parent_id: b.parent_id.clone(),
+                    is_built: b.is_built,
+                    can_build,
+                    effects,
+                }
+            }).collect();
+
+            let response = BuildingTreeResponse {
+                total_buildings: tree.get_total_count(),
+                built_count: tree.get_built_count(),
+                buildings_built_count: tree.buildings_built_count,
+                cost_multiplier: 2_u32.pow(tree.buildings_built_count),
+                available_resources: game.sect.resources,
+                buildings,
+            };
+
+            (StatusCode::OK, Json(ApiResponse::ok(response)))
+        } else {
+            (
+                StatusCode::NOT_FOUND,
+                Json(ApiResponse::<BuildingTreeResponse>::error(
+                    "NO_BUILDING_TREE".to_string(),
+                    "该宗门尚未初始化建筑树".to_string(),
+                )),
+            )
+        }
+    } else {
+        (
+            StatusCode::NOT_FOUND,
+            Json(ApiResponse::<BuildingTreeResponse>::error(
+                "GAME_NOT_FOUND".to_string(),
+                "游戏不存在".to_string(),
+            )),
+        )
+    }
+}
+
+/// POST /api/game/:game_id/buildings/build - 建造建筑
+async fn build_building(
+    State(store): State<AppState>,
+    Path(game_id): Path<String>,
+    Json(req): Json<BuildBuildingRequest>,
+) -> impl IntoResponse {
+    if let Some(game_mutex) = store.get_game(&game_id) {
+        let mut game = game_mutex.lock().await;
+
+        // 检查建筑树是否存在
+        if game.sect.building_tree.is_none() {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(ApiResponse::<BuildBuildingResponse>::error(
+                    "NO_BUILDING_TREE".to_string(),
+                    "该宗门尚未初始化建筑树".to_string(),
+                )),
+            );
+        }
+
+        // 获取建筑名称和成本（用于响应）
+        let building_name = game.sect.building_tree.as_ref()
+            .and_then(|tree| tree.buildings.get(&req.building_id))
+            .map(|b| b.name.clone())
+            .unwrap_or_else(|| req.building_id.clone());
+
+        let cost = match game.sect.building_tree.as_ref()
+            .and_then(|tree| tree.calculate_build_cost(&req.building_id).ok()) {
+            Some(c) => c,
+            None => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(ApiResponse::<BuildBuildingResponse>::error(
+                        "INVALID_BUILDING".to_string(),
+                        "无效的建筑ID".to_string(),
+                    )),
+                );
+            }
+        };
+
+        let resources_before = game.sect.resources;
+
+        // 尝试建造
+        match game.sect.build_building(&req.building_id) {
+            Ok(message) => {
+                // 获取建筑提供的效果数量
+                let effects_count = game.sect.building_tree.as_ref()
+                    .and_then(|tree| tree.buildings.get(&req.building_id))
+                    .map(|b| b.conditional_modifiers.len())
+                    .unwrap_or(0);
+
+                let response = BuildBuildingResponse {
+                    success: true,
+                    message,
+                    building_name,
+                    cost,
+                    resources_before,
+                    resources_after: game.sect.resources,
+                    effects_count,
+                };
+
+                (StatusCode::OK, Json(ApiResponse::ok(response)))
+            }
+            Err(err) => {
+                (
+                    StatusCode::BAD_REQUEST,
+                    Json(ApiResponse::<BuildBuildingResponse>::error(
+                        "BUILD_FAILED".to_string(),
+                        err,
+                    )),
+                )
+            }
+        }
+    } else {
+        (
+            StatusCode::NOT_FOUND,
+            Json(ApiResponse::<BuildBuildingResponse>::error(
                 "GAME_NOT_FOUND".to_string(),
                 "游戏不存在".to_string(),
             )),

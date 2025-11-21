@@ -28,7 +28,7 @@ impl std::fmt::Display for SubLevel {
 }
 
 /// 修为等级系统
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
 pub enum CultivationLevel {
     QiRefining,      // 练气
     Foundation,      // 筑基
@@ -83,6 +83,20 @@ impl CultivationLevel {
     /// 练气=0, 筑基=1, 结丹=2, 凝婴=3, 化神=4, 练虚=5, 飞升=6
     pub fn to_numeric(&self) -> u32 {
         *self as u32
+    }
+
+    /// 获取每回合移动范围（格子数）
+    /// 练气=2, 筑基=3, 结丹=4, 凝婴=5, 化神=6, 练虚=8, 飞升=10
+    pub fn movement_range(&self) -> u32 {
+        match self {
+            CultivationLevel::QiRefining => 2,
+            CultivationLevel::Foundation => 3,
+            CultivationLevel::GoldenCore => 4,
+            CultivationLevel::NascentSoul => 5,
+            CultivationLevel::SpiritSevering => 6,
+            CultivationLevel::VoidRefinement => 8,
+            CultivationLevel::Ascension => 10,
+        }
     }
 }
 

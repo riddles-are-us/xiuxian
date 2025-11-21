@@ -53,6 +53,12 @@ export interface Disciple {
     duration: number;
     progress: number;
   } | null;
+  position: {
+    x: number;
+    y: number;
+  };
+  movement_range: number;    // 每回合可移动的最大距离（格子数）
+  moves_remaining: number;   // 本回合剩余移动距离
 }
 
 export interface Task {
@@ -78,6 +84,15 @@ export interface Task {
     free: number[];           // 空闲的合适弟子ID
     busy: number[];           // 忙碌的合适弟子ID
   };
+  enemy_info: {               // 敌人信息（战斗任务）
+    enemy_id: string;         // 怪物唯一ID
+    enemy_name: string;       // 怪物名称
+    enemy_level: number;      // 怪物等级
+  } | null;
+  position: {                 // 任务位置
+    x: number;
+    y: number;
+  } | null;
 }
 
 export interface AttackInfo {
@@ -142,6 +157,37 @@ export interface UsePillResponse {
   energy_after: number;
   constitution_before: number;
   constitution_after: number;
+}
+
+export interface BuildingDto {
+  id: string;
+  name: string;
+  description: string;
+  base_cost: number;
+  actual_cost: number;
+  parent_id: string | null;
+  is_built: boolean;
+  can_build: boolean;
+  effects: string[];
+}
+
+export interface BuildingTreeResponse {
+  total_buildings: number;
+  built_count: number;
+  buildings_built_count: number;
+  cost_multiplier: number;
+  available_resources: number;
+  buildings: BuildingDto[];
+}
+
+export interface BuildBuildingResponse {
+  success: boolean;
+  message: string;
+  building_name: string;
+  cost: number;
+  resources_before: number;
+  resources_after: number;
+  effects_count: number;
 }
 
 export const gameApi = {
@@ -235,6 +281,33 @@ export const gameApi = {
     const response = await axios.post(`${API_BASE}/game/${gameId}/pills/use`, {
       disciple_id: discipleId,
       pill_type: pillType
+    });
+    return response.data.data;
+  },
+
+  getBuildingTree: async (gameId: string): Promise<BuildingTreeResponse> => {
+    const response = await axios.get(`${API_BASE}/game/${gameId}/buildings`);
+    return response.data.data;
+  },
+
+  buildBuilding: async (gameId: string, buildingId: string): Promise<BuildBuildingResponse> => {
+    const response = await axios.post(`${API_BASE}/game/${gameId}/buildings/build`, {
+      building_id: buildingId
+    });
+    return response.data.data;
+  },
+
+  recruitDisciple: async (gameId: string, accept: boolean) => {
+    const response = await axios.post(`${API_BASE}/game/${gameId}/recruit`, {
+      accept
+    });
+    return response.data.data;
+  },
+
+  moveDisciple: async (gameId: string, discipleId: number, x: number, y: number) => {
+    const response = await axios.post(`${API_BASE}/game/${gameId}/disciples/${discipleId}/move`, {
+      x,
+      y
     });
     return response.data.data;
   }

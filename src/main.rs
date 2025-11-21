@@ -12,6 +12,8 @@ mod web_server;
 mod version;
 mod pill;
 mod config;
+mod modifier;
+mod building;
 
 use interactive::InteractiveGame;
 use ui::UI;

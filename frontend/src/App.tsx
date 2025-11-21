@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { gameApi, GameInfo, Disciple, Task, MapData, VersionInfo, PillInventory } from './api/gameApi';
-import MapView from './MapView';
+import FullscreenMapView from './FullscreenMapView';
+import BuildingTree from './BuildingTree';
 import APP_CONFIG from './config';
 import './App.css';
 
@@ -18,7 +19,9 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [showMap, setShowMap] = useState(false);
   const [showPills, setShowPills] = useState(false);
+  const [showBuildings, setShowBuildings] = useState(false);
   const [notifications, setNotifications] = useState<Array<{id: number, message: string, type: string}>>([]);
+  const [pendingRecruitment, setPendingRecruitment] = useState<Disciple | null>(null);
 
   useEffect(() => {
     // Fetch server version on mount
@@ -28,6 +31,7 @@ function App() {
   useEffect(() => {
     if (gameId) {
       loadGameData(gameId);
+      setShowMap(true); // 自动显示地图
     }
   }, [gameId]);
 
@@ -84,8 +88,13 @@ function App() {
       // 记录当前正在进行的任务
       const currentTasks = tasks.filter(t => t.assigned_to !== null);
 
-      await gameApi.nextTurn(gameId);
+      const turnResult = await gameApi.nextTurn(gameId);
       const newTasks = await gameApi.getTasks(gameId);
+
+      // 检查是否有待招募弟子
+      if (turnResult.pending_recruitment) {
+        setPendingRecruitment(turnResult.pending_recruitment);
+      }
 
       // 检测已完成的任务
       currentTasks.forEach(oldTask => {
@@ -108,11 +117,64 @@ function App() {
     }
   };
 
+  const handleRecruitment = async (accept: boolean) => {
+    if (!gameId || !pendingRecruitment) return;
+    try {
+      setLoading(true);
+      const result = await gameApi.recruitDisciple(gameId, accept);
+
+      if (accept && result.success) {
+        addNotification(
+          `✅ ${result.message}！消耗资源${result.cost}`,
+          'success'
+        );
+        await loadGameData(gameId);
+      } else if (!accept) {
+        addNotification('已拒绝招募', 'info');
+      }
+
+      setPendingRecruitment(null);
+    } catch (err: any) {
+      setError(err.message || '招募失败');
+      addNotification(`❌ ${err.message || '招募失败'}`, 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const refreshTasksAndDisciples = async () => {
+    if (!gameId) return;
+    try {
+      const [disciplesList, tasksList] = await Promise.all([
+        gameApi.getDisciples(gameId),
+        gameApi.getTasks(gameId)
+      ]);
+      setDisciples(disciplesList);
+      setTasks(tasksList);
+    } catch (err: any) {
+      console.error('Failed to refresh tasks and disciples:', err);
+    }
+  };
+
+  const refreshDisciplesAndMap = async () => {
+    if (!gameId) return;
+    try {
+      const [disciplesList, map] = await Promise.all([
+        gameApi.getDisciples(gameId),
+        gameApi.getMap(gameId)
+      ]);
+      setDisciples(disciplesList);
+      setMapData(map);
+    } catch (err: any) {
+      console.error('Failed to refresh disciples and map:', err);
+    }
+  };
+
   const assignTask = async (taskId: number, discipleId: number) => {
     if (!gameId) return;
     try {
       await gameApi.assignTask(gameId, taskId, discipleId);
-      await loadGameData(gameId);
+      await refreshTasksAndDisciples();
     } catch (err: any) {
       const errorMsg = err.response?.data?.error?.message || err.message;
       setError(errorMsg);
@@ -124,7 +186,7 @@ function App() {
     try {
       setLoading(true);
       await gameApi.autoAssignTasks(gameId);
-      await loadGameData(gameId);
+      await refreshTasksAndDisciples();
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -189,6 +251,130 @@ function App() {
     );
   }
 
+  // 如果有地图数据，显示全屏地图视图
+  if (mapData && showMap) {
+    return (
+      <>
+        {/* 通知区域 */}
+        {notifications.length > 0 && (
+          <div style={{
+            position: 'fixed',
+            top: '80px',
+            right: '20px',
+            zIndex: 9999,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '10px',
+            maxWidth: '400px'
+          }}>
+            {notifications.map(notif => (
+              <div key={notif.id} style={{
+                background: notif.type === 'success' ? 'linear-gradient(135deg, #48bb78, #38a169)' : '#f56565',
+                color: 'white',
+                padding: '1rem 1.5rem',
+                borderRadius: '8px',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                animation: 'slideIn 0.3s ease-out',
+                fontSize: '0.95rem',
+                fontWeight: '500'
+              }}>
+                {notif.message}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* 招募弟子模态框 */}
+        {pendingRecruitment && (
+          <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0,0,0,0.7)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 10000
+          }}>
+            <div style={{
+              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              borderRadius: '16px',
+              padding: '2rem',
+              maxWidth: '500px',
+              width: '90%',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+              border: '2px solid rgba(255,255,255,0.2)'
+            }}>
+              <h2 style={{ margin: '0 0 1.5rem 0', color: 'white', fontSize: '1.8rem', textAlign: 'center' }}>
+                ⭐ 新弟子求入门
+              </h2>
+              <div style={{
+                background: 'rgba(255,255,255,0.95)',
+                borderRadius: '12px',
+                padding: '1.5rem',
+                marginBottom: '1.5rem'
+              }}>
+                <h3 style={{ margin: '0 0 1rem 0', color: '#333', fontSize: '1.4rem' }}>{pendingRecruitment.name}</h3>
+                <div style={{ color: '#666', lineHeight: '1.8' }}>
+                  <p><strong>类型:</strong> {pendingRecruitment.disciple_type}</p>
+                  <p><strong>修为:</strong> {pendingRecruitment.cultivation.level} {pendingRecruitment.cultivation.sub_level}</p>
+                  <p><strong>年龄:</strong> {pendingRecruitment.age} 岁</p>
+                  <p><strong>天赋:</strong></p>
+                  <ul style={{ marginLeft: '1.5rem' }}>
+                    {pendingRecruitment.talents.map((t, i) => (
+                      <li key={i}>{t.talent_type} Lv.{t.level}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: '1rem' }}>
+                <button onClick={() => handleRecruitment(false)} style={{
+                  flex: 1,
+                  padding: '0.8rem',
+                  background: '#6c757d',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '1.1rem',
+                  cursor: 'pointer'
+                }}>
+                  ❌ 拒绝
+                </button>
+                <button onClick={() => handleRecruitment(true)} style={{
+                  flex: 1,
+                  padding: '0.8rem',
+                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '1.1rem',
+                  cursor: 'pointer'
+                }}>
+                  ✅ 接受招募
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <FullscreenMapView
+          mapData={mapData}
+          disciples={disciples}
+          tasks={tasks}
+          gameInfo={gameInfo}
+          gameId={gameId}
+          onDiscipleMoved={refreshDisciplesAndMap}
+          onTaskAssigned={refreshTasksAndDisciples}
+          onAutoAssign={autoAssign}
+          onNextTurn={nextTurn}
+          onResetGame={resetGame}
+        />
+      </>
+    );
+  }
+
   return (
     <div className="App">
       {/* 通知区域 */}
@@ -250,17 +436,134 @@ function App() {
         <button onClick={() => setShowMap(!showMap)} className="btn-primary">
           {showMap ? '隐藏地图' : '显示地图'}
         </button>
-        <button onClick={resetGame} className="btn-warning">重置游戏</button>
+        <button onClick={() => setShowBuildings(!showBuildings)} className="btn-primary">
+          {showBuildings ? '隐藏建筑' : '宗门建筑'}
+        </button>
         <button onClick={() => setShowPills(!showPills)} className="btn-secondary">
           {showPills ? '隐藏丹药' : '丹药库存'}
         </button>
+        <button onClick={resetGame} className="btn-warning">重置游戏</button>
       </div>
 
       {error && <div className="error">{error}</div>}
 
-      {showMap && mapData && (
-        <div style={{ padding: '2rem', maxWidth: '1400px', margin: '0 auto' }}>
-          <MapView mapData={mapData} />
+      {/* 招募弟子模态框 */}
+      {pendingRecruitment && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0,0,0,0.7)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000
+        }}>
+          <div style={{
+            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+            borderRadius: '16px',
+            padding: '2rem',
+            maxWidth: '500px',
+            width: '90%',
+            boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+            border: '2px solid rgba(255,255,255,0.2)'
+          }}>
+            <h2 style={{ margin: '0 0 1.5rem 0', color: 'white', fontSize: '1.8rem', textAlign: 'center' }}>
+              ⭐ 新弟子求入门
+            </h2>
+
+            <div style={{
+              background: 'rgba(255,255,255,0.95)',
+              borderRadius: '12px',
+              padding: '1.5rem',
+              marginBottom: '1.5rem'
+            }}>
+              <h3 style={{ margin: '0 0 1rem 0', color: '#333', fontSize: '1.4rem' }}>{pendingRecruitment.name}</h3>
+              <div style={{ color: '#666', lineHeight: '1.8' }}>
+                <p><strong>类型:</strong> {pendingRecruitment.disciple_type}</p>
+                <p><strong>修为:</strong> {pendingRecruitment.cultivation.level} {pendingRecruitment.cultivation.sub_level}</p>
+                <p><strong>年龄:</strong> {pendingRecruitment.age} 岁 (寿元 {pendingRecruitment.lifespan})</p>
+                <p><strong>道心:</strong> {pendingRecruitment.dao_heart}</p>
+                <p><strong>天赋:</strong></p>
+                <ul style={{ marginLeft: '1.5rem', marginTop: '0.5rem' }}>
+                  {pendingRecruitment.talents.map((t, i) => (
+                    <li key={i}>{t.talent_type} Lv.{t.level}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+
+            <div style={{
+              background: 'rgba(255,255,255,0.9)',
+              borderRadius: '8px',
+              padding: '1rem',
+              marginBottom: '1.5rem',
+              textAlign: 'center',
+              color: '#d9534f',
+              fontSize: '1.1rem',
+              fontWeight: 'bold'
+            }}>
+              💰 招募费用: 1000 资源
+            </div>
+
+            <div style={{ display: 'flex', gap: '1rem' }}>
+              <button
+                onClick={() => handleRecruitment(false)}
+                style={{
+                  flex: 1,
+                  padding: '0.8rem',
+                  background: '#6c757d',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '1.1rem',
+                  cursor: 'pointer',
+                  transition: 'all 0.3s'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.background = '#5a6268'}
+                onMouseLeave={(e) => e.currentTarget.style.background = '#6c757d'}
+              >
+                ❌ 拒绝
+              </button>
+              <button
+                onClick={() => handleRecruitment(true)}
+                style={{
+                  flex: 1,
+                  padding: '0.8rem',
+                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '1.1rem',
+                  cursor: 'pointer',
+                  transition: 'all 0.3s',
+                  boxShadow: '0 4px 15px rgba(102, 126, 234, 0.4)'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.transform = 'translateY(-2px)';
+                  e.currentTarget.style.boxShadow = '0 6px 20px rgba(102, 126, 234, 0.6)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = 'translateY(0)';
+                  e.currentTarget.style.boxShadow = '0 4px 15px rgba(102, 126, 234, 0.4)';
+                }}
+              >
+                ✅ 接受招募
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+
+      {showBuildings && gameId && (
+        <div style={{ padding: '1rem', maxWidth: '1400px', margin: '0 auto' }}>
+          <BuildingTree
+            gameId={gameId}
+            onResourcesChanged={() => gameId && loadGameData(gameId)}
+          />
         </div>
       )}
 
@@ -502,6 +805,23 @@ function App() {
                     ⏰ {t.remaining_turns}回合后失效
                   </span>
                 </div>
+                {t.enemy_info && (
+                  <div style={{
+                    background: '#fff3cd',
+                    border: '1px solid #ffc107',
+                    borderRadius: '6px',
+                    padding: '8px 12px',
+                    marginBottom: '8px',
+                    fontSize: '0.9rem'
+                  }}>
+                    <strong style={{color: '#856404'}}>⚔️ 入侵者:</strong>{' '}
+                    <span style={{color: '#d9534f', fontWeight: 600}}>{t.enemy_info.enemy_name}</span>
+                    {' '}
+                    <span style={{color: '#666'}}>
+                      (Lv.{t.enemy_info.enemy_level} | ID: {t.enemy_info.enemy_id})
+                    </span>
+                  </div>
+                )}
                 <p>{t.task_type}</p>
                 <div className="task-duration">
                   ⏱️ 需要执行 {t.duration} 回合

@@ -89,6 +89,12 @@
   border-color: #4299e1;
 }
 
+.tile-selected {
+  border-width: 3px !important;
+  border-color: #4299e1 !important;
+  box-shadow: 0 0 15px #4299e1 !important;
+}
+
 .tile-icon {
   font-size: 1.5rem;
   line-height: 1;

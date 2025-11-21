@@ -676,7 +676,12 @@ impl GameMap {
         let mut task_id = 0;
 
         for positioned in &mut self.elements {
-            let element_tasks = positioned.element.generate_tasks(task_id);
+            let mut element_tasks = positioned.element.generate_tasks(task_id);
+
+            // 为所有从此位置生成的任务设置位置
+            for task in &mut element_tasks {
+                task.position = Some(positioned.position);
+            }
 
             // 如果是妖魔任务，需要记录任务ID
             if let MapElement::Monster(monster) = &mut positioned.element {
@@ -833,7 +838,7 @@ impl GameMap {
                     }) {
                         if let Some(task_name) = invaded_elem.element.get_defense_task_name() {
                             // 创建守卫任务
-                            let task = Task::new(
+                            let mut task = Task::new(
                                 task_id,
                                 task_name,
                                 crate::task::TaskType::Combat(crate::task::CombatTask {
@@ -844,6 +849,9 @@ impl GameMap {
                                 monster.level * 10,  // 进度奖励
                                 monster.level * 20,  // 资源奖励
                             );
+
+                            // 设置任务位置为被入侵地点的位置
+                            task.position = Some(invaded_elem.position);
 
                             tasks.push(task);
                             task_id += 1;

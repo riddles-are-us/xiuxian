@@ -143,18 +143,6 @@ impl MapElementsConfig {
                             skill_required: None,
                         },
                         TaskTemplateConfig {
-                            name_template: "守卫{name}".to_string(),
-                            task_type: "Auxiliary".to_string(),
-                            progress_reward: 3,
-                            resource_reward: 5,
-                            reputation_reward: 10,
-                            dao_heart_impact: 2,
-                            resource_type: None,
-                            difficulty: None,
-                            danger_level: None,
-                            skill_required: None,
-                        },
-                        TaskTemplateConfig {
                             name_template: "在{name}行医".to_string(),
                             task_type: "Auxiliary".to_string(),
                             progress_reward: 5,

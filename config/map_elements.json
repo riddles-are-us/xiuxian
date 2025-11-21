@@ -22,18 +22,6 @@
           "skill_required": null
         },
         {
-          "name_template": "守卫{name}",
-          "task_type": "Auxiliary",
-          "progress_reward": 3,
-          "resource_reward": 5,
-          "reputation_reward": 10,
-          "dao_heart_impact": 2,
-          "resource_type": null,
-          "difficulty": null,
-          "danger_level": null,
-          "skill_required": null
-        },
-        {
           "name_template": "在{name}行医",
           "task_type": "Auxiliary",
           "progress_reward": 5,

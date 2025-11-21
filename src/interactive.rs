@@ -33,6 +33,7 @@ pub struct InteractiveGame {
     pub current_tasks: Vec<Task>,
     pub task_assignments: Vec<TaskAssignment>,
     pub is_web_mode: bool, // Web模式下不显示UI和等待输入
+    pub pending_recruitment: Option<Disciple>, // 待招募的弟子（需要用户确认）
 }
 
 impl InteractiveGame {
@@ -44,8 +45,14 @@ impl InteractiveGame {
         let mut map = GameMap::new();
         map.initialize();
 
+        let mut sect = Sect::new(sect_name);
+
+        // 初始化建筑树
+        let building_tree = crate::building::create_default_sect_building_tree();
+        sect.init_building_tree(building_tree);
+
         let mut game = Self {
-            sect: Sect::new(sect_name),
+            sect,
             map,
             event_system: EventSystem::new(),
             recruitment_system: RecruitmentSystem::new(),
@@ -53,6 +60,7 @@ impl InteractiveGame {
             current_tasks: Vec::new(),
             task_assignments: Vec::new(),
             is_web_mode,
+            pending_recruitment: None,
         };
 
         // 初始招募3个弟子
@@ -69,9 +77,11 @@ impl InteractiveGame {
         // 弟子年龄增长和寿元检查（这会增加年份）
         self.sect.yearly_update();
 
-        // 弟子自然恢复精力和体魄
+        // 弟子自然恢复精力和体魄，并重置移动距离
         for disciple in self.sect.alive_disciples_mut() {
             disciple.natural_recovery();
+            // 重置每回合的移动距离
+            disciple.moves_remaining = disciple.cultivation.current_level.movement_range();
         }
 
         if !self.is_web_mode {
@@ -88,14 +98,18 @@ impl InteractiveGame {
 
         // 2. 尝试招募弟子
         if let Some(disciple) = self.recruitment_system.try_recruit(&self.sect) {
-            if !self.is_web_mode {
+            if self.is_web_mode {
+                // Web模式：存储为待确认招募
+                self.pending_recruitment = Some(disciple);
+            } else {
+                // 命令行模式：直接招募
                 UI::success(&format!(
                     "新弟子加入：{} ({})",
                     disciple.name,
                     self.disciple_type_str(&disciple)
                 ));
+                self.sect.recruit_disciple(disciple);
             }
-            self.sect.recruit_disciple(disciple);
         }
 
         // 3. 清理过期任务

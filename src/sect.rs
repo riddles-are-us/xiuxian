@@ -1,6 +1,8 @@
 use crate::disciple::{Disciple, DiscipleType, Heritage};
 use crate::cultivation::CultivationLevel;
 use crate::pill::PillInventory;
+use crate::modifier::ConditionalModifier;
+use crate::building::BuildingTree;
 
 /// 宗门
 #[derive(Debug)]
@@ -13,6 +15,8 @@ pub struct Sect {
     pub heritages: Vec<Heritage>, // 传承库
     pub year: u32, // 当前年份
     pub pill_inventory: PillInventory, // 丹药库存
+    pub sect_modifiers: Vec<ConditionalModifier>, // 宗门级别的条件modifier
+    pub building_tree: Option<BuildingTree>, // 建筑树（可选）
 }
 
 impl Sect {
@@ -26,7 +30,131 @@ impl Sect {
             heritages: Vec::new(),
             year: 0,
             pill_inventory: PillInventory::new(),
+            sect_modifiers: Vec::new(),
+            building_tree: None,
         }
+    }
+
+    /// 初始化建筑树
+    pub fn init_building_tree(&mut self, building_tree: BuildingTree) {
+        self.building_tree = Some(building_tree);
+    }
+
+    /// 添加宗门级别的条件modifier
+    pub fn add_sect_modifier(&mut self, conditional_modifier: ConditionalModifier) {
+        self.sect_modifiers.push(conditional_modifier);
+    }
+
+    /// 移除宗门级别的条件modifier
+    pub fn remove_sect_modifier(&mut self, index: usize) -> Option<ConditionalModifier> {
+        if index < self.sect_modifiers.len() {
+            Some(self.sect_modifiers.remove(index))
+        } else {
+            None
+        }
+    }
+
+    /// 清除所有宗门modifier
+    pub fn clear_sect_modifiers(&mut self) {
+        self.sect_modifiers.clear();
+    }
+
+    /// 获取对指定弟子生效的所有宗门modifier（包括建筑提供的）
+    /// 注意：由于生命周期限制，这个方法返回拥有所有权的Modifier向量
+    pub fn get_applicable_modifiers_owned(&self, disciple: &Disciple) -> Vec<crate::modifier::Modifier> {
+        let mut modifiers: Vec<crate::modifier::Modifier> = Vec::new();
+
+        // 添加宗门直接设置的modifiers
+        for cm in &self.sect_modifiers {
+            if let Some(m) = cm.get_modifier_if_applies(disciple) {
+                modifiers.push(m.clone());
+            }
+        }
+
+        // 添加建筑树提供的modifiers
+        if let Some(ref tree) = self.building_tree {
+            for cm in tree.get_all_modifiers() {
+                if cm.applies_to(disciple) {
+                    modifiers.push(cm.modifier.clone());
+                }
+            }
+        }
+
+        modifiers
+    }
+
+    /// 获取对指定弟子生效的所有宗门modifier（返回引用，仅包括直接设置的modifiers）
+    pub fn get_applicable_modifiers(&self, disciple: &Disciple) -> Vec<&crate::modifier::Modifier> {
+        self.sect_modifiers
+            .iter()
+            .filter_map(|cm| cm.get_modifier_if_applies(disciple))
+            .collect()
+    }
+
+    // === 建筑系统方法 ===
+
+    /// 建造建筑
+    pub fn build_building(&mut self, building_id: &str) -> Result<String, String> {
+        // 1. 检查是否有建筑树
+        let tree = self.building_tree.as_mut()
+            .ok_or("宗门尚未初始化建筑树")?;
+
+        // 2. 检查是否可以建造
+        tree.can_build(building_id)?;
+
+        // 3. 计算建造成本
+        let cost = tree.calculate_build_cost(building_id)?;
+
+        // 4. 检查资源是否足够
+        if self.resources < cost {
+            return Err(format!("资源不足，需要{}，当前只有{}", cost, self.resources));
+        }
+
+        // 5. 扣除资源
+        self.resources -= cost;
+
+        // 6. 执行建造
+        let modifiers = tree.build(building_id)?;
+
+        // 7. 将建筑提供的modifiers添加到宗门modifiers（可选，因为get_applicable_modifiers已经会获取它们）
+        // 这里选择不添加，让modifiers由建筑树统一管理
+
+        // 8. 获取建筑名称用于返回消息
+        let building_name = tree.buildings.get(building_id)
+            .map(|b| b.name.clone())
+            .unwrap_or_else(|| building_id.to_string());
+
+        Ok(format!("成功建造'{}'，花费{}资源，获得{}个效果",
+                   building_name, cost, modifiers.len()))
+    }
+
+    /// 获取可建造的建筑列表（包含成本信息）
+    pub fn get_buildable_buildings_with_cost(&self) -> Vec<(String, String, u32)> {
+        if let Some(ref tree) = self.building_tree {
+            tree.get_buildable_buildings()
+                .iter()
+                .filter_map(|b| {
+                    tree.calculate_build_cost(&b.id)
+                        .ok()
+                        .map(|cost| (b.id.clone(), b.name.clone(), cost))
+                })
+                .collect()
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// 获取建筑树信息摘要
+    pub fn get_building_tree_summary(&self) -> Option<String> {
+        self.building_tree.as_ref().map(|tree| {
+            format!(
+                "建筑树：{}/{}已建造，深度{}，下一个建筑成本倍增{}x",
+                tree.get_built_count(),
+                tree.get_total_count(),
+                tree.get_depth(),
+                2_u32.pow(tree.buildings_built_count)
+            )
+        })
     }
 
     /// 添加弟子

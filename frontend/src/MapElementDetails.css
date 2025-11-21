@@ -1,0 +1,20 @@
+.detail-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.detail-row:last-child {
+  border-bottom: none;
+}
+
+.detail-label {
+  color: #a0aec0;
+  font-weight: 500;
+}
+
+.detail-value {
+  color: #e2e8f0;
+  font-weight: 600;
+}

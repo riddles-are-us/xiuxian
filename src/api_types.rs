@@ -106,6 +106,9 @@ pub struct DiscipleDto {
     pub dao_companion: Option<DaoCompanionDto>,
     pub children_count: usize,
     pub current_task_info: Option<CurrentTaskInfo>,
+    pub position: PositionDto,  // 弟子在地图上的位置
+    pub movement_range: u32,    // 每回合可移动的最大距离（格子数）
+    pub moves_remaining: u32,   // 本回合剩余移动距离
 }
 
 /// 当前任务详情
@@ -150,6 +153,12 @@ impl From<&Disciple> for DiscipleDto {
             }),
             children_count: disciple.children.len(),
             current_task_info: None,  // 将在web_server中填充
+            movement_range: disciple.cultivation.current_level.movement_range(),
+            moves_remaining: disciple.moves_remaining,
+            position: PositionDto {
+                x: disciple.position.x,
+                y: disciple.position.y,
+            },
         }
     }
 }
@@ -220,6 +229,16 @@ pub struct TaskDto {
     pub constitution_cost: u32,   // 体魄消耗（每回合）
     pub skill_required: Option<String>,  // 需要的技能
     pub suitable_disciples: SuitableDisciples,  // 合适的弟子
+    pub enemy_info: Option<EnemyInfo>,  // 敌人信息（战斗任务，包含唯一ID）
+    pub position: Option<PositionDto>,  // 任务位置（需要弟子到达才能执行）
+}
+
+/// 敌人信息（用于定位地图上的具体怪物）
+#[derive(Debug, Serialize, Clone)]
+pub struct EnemyInfo {
+    pub enemy_id: String,      // 怪物唯一ID（格式：monster_X）
+    pub enemy_name: String,    // 怪物名称
+    pub enemy_level: u32,      // 怪物等级
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -257,6 +276,7 @@ pub struct TurnStartResponse {
     pub events: Vec<GameEventDto>,
     pub tasks: Vec<TaskDto>,
     pub disciples: Vec<DiscipleDto>,
+    pub pending_recruitment: Option<DiscipleDto>,  // 待招募的弟子（需要确认）
 }
 
 #[derive(Debug, Serialize)]
@@ -417,4 +437,82 @@ pub struct UsePillResponse {
     pub energy_after: u32,
     pub constitution_before: u32,
     pub constitution_after: u32,
+}
+
+/// 建筑DTO
+#[derive(Debug, Serialize, Clone)]
+pub struct BuildingDto {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub base_cost: u32,
+    pub actual_cost: u32,  // 考虑倍增后的实际成本
+    pub parent_id: Option<String>,
+    pub is_built: bool,
+    pub can_build: bool,  // 是否可以建造（父节点已建造且自己未建造）
+    pub effects: Vec<String>,  // 效果描述
+}
+
+/// 建筑树响应
+#[derive(Debug, Serialize)]
+pub struct BuildingTreeResponse {
+    pub total_buildings: usize,
+    pub built_count: usize,
+    pub buildings_built_count: u32,  // 已建造数量（用于成本计算）
+    pub cost_multiplier: u32,  // 当前成本倍数 2^n
+    pub available_resources: u32,  // 宗门当前资源
+    pub buildings: Vec<BuildingDto>,
+}
+
+/// 建造建筑请求
+#[derive(Debug, Deserialize)]
+pub struct BuildBuildingRequest {
+    pub building_id: String,
+}
+
+/// 建造建筑响应
+#[derive(Debug, Serialize)]
+pub struct BuildBuildingResponse {
+    pub success: bool,
+    pub message: String,
+    pub building_name: String,
+    pub cost: u32,
+    pub resources_before: u32,
+    pub resources_after: u32,
+    pub effects_count: usize,
+}
+
+/// 招募弟子请求
+#[derive(Debug, Deserialize)]
+pub struct RecruitDiscipleRequest {
+    pub accept: bool,  // true=接受招募, false=拒绝招募
+}
+
+/// 招募弟子响应
+#[derive(Debug, Serialize)]
+pub struct RecruitDiscipleResponse {
+    pub success: bool,
+    pub message: String,
+    pub disciple: Option<DiscipleDto>,  // 招募成功时返回弟子信息
+    pub resources_before: u32,
+    pub resources_after: u32,
+    pub cost: u32,  // 招募成本（1000）
+}
+
+/// 移动弟子请求
+#[derive(Debug, Deserialize)]
+pub struct MoveDiscipleRequest {
+    pub x: i32,
+    pub y: i32,
+}
+
+/// 移动弟子响应
+#[derive(Debug, Serialize)]
+pub struct MoveDiscipleResponse {
+    pub success: bool,
+    pub message: String,
+    pub disciple_id: usize,
+    pub disciple_name: String,
+    pub old_position: PositionDto,
+    pub new_position: PositionDto,
 }

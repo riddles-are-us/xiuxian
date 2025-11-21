@@ -1,4 +1,6 @@
 use crate::disciple::TalentType;
+use crate::modifier::ModifierTarget;
+use crate::map::Position;
 
 /// 任务类型
 #[derive(Debug, Clone)]
@@ -62,6 +64,7 @@ pub struct Task {
     pub energy_cost: u32,       // 精力消耗（每回合）
     pub constitution_cost: u32, // 体魄消耗（每回合）
     pub location_id: Option<String>, // 任务关联的地点ID（用于确保同一地点同一类型任务唯一性）
+    pub position: Option<Position>,  // 任务位置（需要弟子到达才能执行）
 }
 
 impl Task {
@@ -95,6 +98,7 @@ impl Task {
             energy_cost,
             constitution_cost,
             location_id: None,  // 默认无地点关联
+            position: None,     // 默认无位置要求
         }
     }
 
@@ -132,6 +136,7 @@ impl Task {
             energy_cost,
             constitution_cost,
             location_id: None,  // 默认无地点关联
+            position: None,     // 默认无位置要求
         }
     }
 
@@ -140,19 +145,48 @@ impl Task {
         current_turn >= self.created_turn + self.expiry_turns
     }
 
-    /// 检查弟子是否适合此任务
+    /// 检查弟子是否适合此任务（应用modifier后的有效判定）
     pub fn is_suitable_for_disciple(&self, disciple: &crate::disciple::Disciple) -> bool {
+        self.is_suitable_for_disciple_with_sect_modifiers(disciple, &[])
+    }
+
+    /// 检查弟子是否适合此任务（应用modifier后的有效判定，包含宗门modifiers）
+    pub fn is_suitable_for_disciple_with_sect_modifiers(
+        &self,
+        disciple: &crate::disciple::Disciple,
+        sect_modifiers: &[&crate::modifier::Modifier],
+    ) -> bool {
         match &self.task_type {
             TaskType::Combat(combat) => {
-                // 检查战斗力是否足够
-                disciple.cultivation.current_level as u32 >= combat.enemy_level
+                // 1. 获取native修为等级
+                let native_level = disciple.cultivation.current_level as u32 as f32;
+
+                // 2. 应用TaskSuitability modifier获取effective等级（包含宗门modifiers）
+                let effective_level = disciple.modifiers.calculate_effective_with_extras(
+                    &ModifierTarget::TaskSuitability,
+                    native_level,
+                    sect_modifiers
+                ) as u32;
+
+                // 3. 检查战斗力是否足够
+                effective_level >= combat.enemy_level
             }
             TaskType::Exploration(exploration) => {
-                // 检查修为是否足够应对危险
-                disciple.cultivation.current_level as u32 * 10 >= exploration.danger_level
+                // 1. 获取native修为等级
+                let native_level = disciple.cultivation.current_level as u32 as f32;
+
+                // 2. 应用TaskSuitability modifier获取effective等级（包含宗门modifiers）
+                let effective_level = disciple.modifiers.calculate_effective_with_extras(
+                    &ModifierTarget::TaskSuitability,
+                    native_level,
+                    sect_modifiers
+                ) as u32;
+
+                // 3. 检查修为是否足够应对危险
+                effective_level * 10 >= exploration.danger_level
             }
             TaskType::Auxiliary(auxiliary) => {
-                // 检查是否有对应的资质
+                // 检查是否有对应的资质（不受modifier影响）
                 if let Some(ref skill) = auxiliary.skill_required {
                     disciple.talents.iter().any(|t| &t.talent_type == skill)
                 } else {

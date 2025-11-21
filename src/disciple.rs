@@ -1,8 +1,10 @@
 use crate::cultivation::{CultivationLevel, SubLevel, CultivationPath};
 use crate::task::{Task, TaskType};
+use crate::modifier::{ModifierStack, ModifierTarget, Modifier, ModifierSource};
+use crate::map::Position;
 
 /// 弟子类型
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum DiscipleType {
     Outer,      // 外门
     Inner,      // 内门
@@ -10,7 +12,7 @@ pub enum DiscipleType {
 }
 
 /// 资质类型
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum TalentType {
     Fire,           // 火灵根
     Water,          // 水灵根
@@ -129,17 +131,21 @@ pub struct Disciple {
     pub talents: Vec<Talent>,
     pub age: u32,
     pub lifespan: u32,
-    pub dao_heart: u32,  // 道心 0-100
-    pub energy: u32,     // 精力 0-100
-    pub constitution: u32, // 体魄 0-100
+    pub dao_heart: u32,  // 道心 0-100 (native value)
+    pub energy: u32,     // 精力 0-100 (native value)
+    pub constitution: u32, // 体魄 0-100 (native value)
     pub heritage: Option<Heritage>,
     pub dao_companion: Option<DaoCompanion>,
     pub children: Vec<usize>, // 子女ID列表
+    pub modifiers: ModifierStack, // Modifier系统
+    pub position: Position, // 弟子在地图上的位置
+    pub moves_remaining: u32, // 本回合剩余移动距离
 }
 
 impl Disciple {
     pub fn new(id: usize, name: String, disciple_type: DiscipleType, talents: Vec<Talent>) -> Self {
         let lifespan = CultivationLevel::QiRefining.base_lifespan();
+        let movement_range = CultivationLevel::QiRefining.movement_range();
 
         Self {
             id,
@@ -155,6 +161,9 @@ impl Disciple {
             heritage: None,
             dao_companion: None,
             children: Vec::new(),
+            modifiers: ModifierStack::new(),
+            position: Position { x: 10, y: 10 }, // 初始位置在宗门
+            moves_remaining: movement_range, // 初始化为移动范围
         }
     }
 
@@ -173,25 +182,112 @@ impl Disciple {
         self.age += 1;
     }
 
-    /// 获取资质加成
+    /// 移动到指定位置
+    pub fn move_to(&mut self, new_position: Position) {
+        self.position = new_position;
+    }
+
+    /// 检查是否在指定位置
+    pub fn is_at_position(&self, pos: &Position) -> bool {
+        self.position.x == pos.x && self.position.y == pos.y
+    }
+
+    // === Modifier系统辅助方法 ===
+
+    /// 获取有效道心值（应用modifier后，包含宗门modifiers）
+    pub fn get_effective_dao_heart(&self) -> f32 {
+        self.get_effective_dao_heart_with_sect_modifiers(&[])
+    }
+
+    /// 获取有效道心值（应用modifier后，包含宗门modifiers）
+    pub fn get_effective_dao_heart_with_sect_modifiers(&self, sect_modifiers: &[&crate::modifier::Modifier]) -> f32 {
+        self.modifiers.calculate_effective_with_extras(&ModifierTarget::DaoHeart, self.dao_heart as f32, sect_modifiers)
+    }
+
+    /// 获取有效精力值（应用modifier后）
+    pub fn get_effective_energy(&self) -> f32 {
+        self.get_effective_energy_with_sect_modifiers(&[])
+    }
+
+    /// 获取有效精力值（应用modifier后，包含宗门modifiers）
+    pub fn get_effective_energy_with_sect_modifiers(&self, sect_modifiers: &[&crate::modifier::Modifier]) -> f32 {
+        self.modifiers.calculate_effective_with_extras(&ModifierTarget::Energy, self.energy as f32, sect_modifiers)
+    }
+
+    /// 获取有效体魄值（应用modifier后）
+    pub fn get_effective_constitution(&self) -> f32 {
+        self.get_effective_constitution_with_sect_modifiers(&[])
+    }
+
+    /// 获取有效体魄值（应用modifier后，包含宗门modifiers）
+    pub fn get_effective_constitution_with_sect_modifiers(&self, sect_modifiers: &[&crate::modifier::Modifier]) -> f32 {
+        self.modifiers.calculate_effective_with_extras(&ModifierTarget::Constitution, self.constitution as f32, sect_modifiers)
+    }
+
+    /// 每回合更新modifier（减少持续时间，移除过期的modifier）
+    pub fn tick_modifiers(&mut self) -> usize {
+        self.modifiers.tick()
+    }
+
+    /// 添加一个modifier
+    pub fn add_modifier(&mut self, modifier: Modifier) {
+        self.modifiers.add_modifier(modifier);
+    }
+
+    /// 移除指定来源的所有modifier
+    pub fn remove_modifiers_by_source(&mut self, source: &ModifierSource) {
+        self.modifiers.remove_modifiers_by_source(source);
+    }
+
+    /// 获取资质加成（应用modifier后的有效值）
     pub fn get_talent_bonus(&self, talent_type: &TalentType) -> f32 {
-        self.talents
+        self.get_talent_bonus_with_sect_modifiers(talent_type, &[])
+    }
+
+    /// 获取资质加成（应用modifier后的有效值，包含宗门modifiers）
+    pub fn get_talent_bonus_with_sect_modifiers(&self, talent_type: &TalentType, sect_modifiers: &[&crate::modifier::Modifier]) -> f32 {
+        // 1. 计算native值（原始天赋加成）
+        let native_bonus = self.talents
             .iter()
             .find(|t| &t.talent_type == talent_type)
             .map(|t| t.level as f32 * 0.1)
-            .unwrap_or(0.0)
+            .unwrap_or(0.0);
+
+        // 2. 应用modifier获取effective值（包含宗门modifiers）
+        let talent_type_str = format!("{:?}", talent_type);
+        let target = ModifierTarget::TalentBonus(talent_type_str);
+        self.modifiers.calculate_effective_with_extras(&target, native_bonus, sect_modifiers)
     }
 
-    /// 计算渡劫成功率
+    /// 计算渡劫成功率（应用modifier后的有效值）
     pub fn tribulation_success_rate(&self) -> f32 {
+        self.tribulation_success_rate_with_sect_modifiers(&[])
+    }
+
+    /// 计算渡劫成功率（应用modifier后的有效值，包含宗门modifiers）
+    pub fn tribulation_success_rate_with_sect_modifiers(&self, sect_modifiers: &[&crate::modifier::Modifier]) -> f32 {
+        // 1. 使用有效道心值（应用modifier后，包含宗门modifiers）
+        let effective_dao_heart = self.get_effective_dao_heart_with_sect_modifiers(sect_modifiers);
+
         let base_rate = 0.3; // 基础成功率30%
-        let dao_heart_bonus = self.dao_heart as f32 * 0.005; // 道心加成
+        let dao_heart_bonus = effective_dao_heart * 0.005; // 道心加成
         let heritage_bonus = self.heritage
             .as_ref()
             .map(|h| h.tribulation_bonus)
             .unwrap_or(0.0);
 
-        (base_rate + dao_heart_bonus + heritage_bonus).min(0.95)
+        // 2. 计算native成功率
+        let native_rate = (base_rate + dao_heart_bonus + heritage_bonus).min(0.95);
+
+        // 3. 应用TribulationSuccessRate modifier（包含宗门modifiers）
+        let effective_rate = self.modifiers.calculate_effective_with_extras(
+            &ModifierTarget::TribulationSuccessRate,
+            native_rate,
+            sect_modifiers
+        );
+
+        // 4. 确保在合理范围内 (0.0 - 0.95)
+        effective_rate.max(0.0).min(0.95)
     }
 
     /// 尝试渡劫
@@ -232,9 +328,9 @@ impl Disciple {
         false
     }
 
-    /// 完成任务
+    /// 完成任务（应用modifier后的有效奖励）
     pub fn complete_task(&mut self, task: &Task) -> u32 {
-        // 1. 天赋加成（保留原有系统）
+        // 1. 天赋加成（已经应用了modifier）
         let talent_bonus = match &task.task_type {
             TaskType::Gathering(_) => self.get_talent_bonus(&TalentType::Wood),
             TaskType::Combat(_) => self.get_talent_bonus(&TalentType::Sword),
@@ -259,11 +355,17 @@ impl Disciple {
         // 5. 天赋乘数
         let talent_multiplier = 1.0 + talent_bonus;
 
-        // 6. 最终奖励计算
-        let actual_progress = (base_progress * difficulty_multiplier * level_penalty * talent_multiplier) as u32;
+        // 6. 计算native奖励
+        let native_reward = base_progress * difficulty_multiplier * level_penalty * talent_multiplier;
 
-        // 确保至少给予1点修为
-        let actual_progress = actual_progress.max(1);
+        // 7. 应用TaskReward modifier获取effective奖励
+        let effective_reward = self.modifiers.calculate_effective(
+            &ModifierTarget::TaskReward,
+            native_reward
+        );
+
+        // 8. 转换为整数，确保至少给予1点修为
+        let actual_progress = (effective_reward as u32).max(1);
 
         // 添加修为进度
         self.cultivation.add_progress(actual_progress);
@@ -286,10 +388,17 @@ impl Disciple {
         actual_progress
     }
 
-    /// 消耗精力
+    /// 消耗精力（应用modifier后的有效消耗）
     pub fn consume_energy(&mut self, amount: u32) {
-        if self.energy >= amount {
-            self.energy -= amount;
+        // 1. 应用EnergyConsumption modifier
+        let effective_consumption = self.modifiers.calculate_effective(
+            &ModifierTarget::EnergyConsumption,
+            amount as f32
+        ) as u32;
+
+        // 2. 执行消耗
+        if self.energy >= effective_consumption {
+            self.energy -= effective_consumption;
         } else {
             self.energy = 0;
         }
@@ -301,10 +410,17 @@ impl Disciple {
         }
     }
 
-    /// 消耗体魄
+    /// 消耗体魄（应用modifier后的有效消耗）
     pub fn consume_constitution(&mut self, amount: u32) {
-        if self.constitution >= amount {
-            self.constitution -= amount;
+        // 1. 应用ConstitutionConsumption modifier
+        let effective_consumption = self.modifiers.calculate_effective(
+            &ModifierTarget::ConstitutionConsumption,
+            amount as f32
+        ) as u32;
+
+        // 2. 执行消耗
+        if self.constitution >= effective_consumption {
+            self.constitution -= effective_consumption;
         } else {
             self.constitution = 0;
         }
