@@ -135,8 +135,11 @@ function App() {
 
       setPendingRecruitment(null);
     } catch (err: any) {
-      setError(err.message || '招募失败');
-      addNotification(`❌ ${err.message || '招募失败'}`, 'error');
+      const errorMsg = err.response?.data?.error?.message || err.message || '招募失败';
+      setError(errorMsg);
+      addNotification(`❌ 招募失败：${errorMsg}`, 'error');
+      // 即使失败也关闭招募对话框，让用户能看到错误通知
+      setPendingRecruitment(null);
     } finally {
       setLoading(false);
     }
@@ -175,9 +178,11 @@ function App() {
     try {
       await gameApi.assignTask(gameId, taskId, discipleId);
       await refreshTasksAndDisciples();
+      addNotification('✅ 任务分配成功', 'success');
     } catch (err: any) {
       const errorMsg = err.response?.data?.error?.message || err.message;
       setError(errorMsg);
+      addNotification(`❌ ${errorMsg}`, 'error');
     }
   };
 
