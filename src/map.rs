@@ -31,6 +31,7 @@ pub enum TerrainType {
 pub struct Terrain {
     pub terrain_type: TerrainType,
     pub name: String,
+    pub variant_type: String,  // 具体变体: "mountain", "river", "lake", etc.
 }
 
 /// 地图坐标
@@ -644,6 +645,7 @@ pub struct StaticTerrain {
     pub core_position: Position,        // 地形中心位置
     pub positions: Vec<Position>,       // 占据的所有位置（不可通行）
     pub terrain_type: String, // "Mountain", "Water", "Forest", "Plain"
+    pub variant_type: String, // 具体变体: "mountain", "river", "lake", etc. (用于前端纹理显示)
 }
 
 /// 游戏地图
@@ -760,33 +762,111 @@ impl GameMap {
                 },
             ],
             terrains: vec![
+                // === 山脉变体展示 ===
+                // 小山峰 1x1
+                StaticTerrain {
+                    name: "小石峰".to_string(),
+                    core_position: Position { x: 1, y: 1 },
+                    positions: vec![Position { x: 1, y: 1 }],
+                    terrain_type: "Mountain".to_string(),
+                    variant_type: "small_mountain".to_string(),
+                },
+                // 中型山脉 1x2
                 StaticTerrain {
                     name: "太行山".to_string(),
-                    core_position: mountain_positions[0],
-                    // 山脉随机1x1或1x2（不可通行）
-                    positions: mountain_positions,
+                    core_position: Position { x: 2, y: 2 },
+                    positions: vec![
+                        Position { x: 2, y: 2 },
+                        Position { x: 3, y: 2 },
+                    ],
                     terrain_type: "Mountain".to_string(),
+                    variant_type: "mid_mountain".to_string(),
                 },
+                // 大型山脉 2x2
                 StaticTerrain {
                     name: "昆仑山".to_string(),
-                    core_position: mountain2_positions[0],
-                    // 山脉随机1x1或1x2（不可通行）
-                    positions: mountain2_positions,
+                    core_position: Position { x: 17, y: 3 },
+                    positions: vec![
+                        Position { x: 17, y: 3 },
+                        Position { x: 18, y: 3 },
+                        Position { x: 17, y: 4 },
+                        Position { x: 18, y: 4 },
+                    ],
                     terrain_type: "Mountain".to_string(),
+                    variant_type: "large_mountain".to_string(),
                 },
+
+                // === 水域变体展示 ===
+                // 小湖 1x1
+                StaticTerrain {
+                    name: "清泉小潭".to_string(),
+                    core_position: Position { x: 6, y: 3 },
+                    positions: vec![Position { x: 6, y: 3 }],
+                    terrain_type: "Water".to_string(),
+                    variant_type: "small_lake".to_string(),
+                },
+                // 大湖 2x2
                 StaticTerrain {
                     name: "玄水湖".to_string(),
                     core_position: Position { x: 12, y: 6 },
-                    // 湖泊占据1x1（不可通行）
-                    positions: vec![Position { x: 12, y: 6 }],
+                    positions: vec![
+                        Position { x: 12, y: 6 },
+                        Position { x: 13, y: 6 },
+                        Position { x: 12, y: 7 },
+                        Position { x: 13, y: 7 },
+                    ],
                     terrain_type: "Water".to_string(),
+                    variant_type: "large_lake".to_string(),
                 },
+                // 河流1：直线河流（垂直）
+                StaticTerrain {
+                    name: "清流河".to_string(),
+                    core_position: Position { x: 9, y: 2 },
+                    positions: vec![
+                        Position { x: 9, y: 2 },
+                        Position { x: 9, y: 3 },
+                        Position { x: 9, y: 4 },
+                        Position { x: 9, y: 5 },
+                    ],
+                    terrain_type: "Water".to_string(),
+                    variant_type: "river".to_string(),
+                },
+                // 河流2：L形河流
+                StaticTerrain {
+                    name: "碧水江".to_string(),
+                    core_position: Position { x: 14, y: 2 },
+                    positions: vec![
+                        Position { x: 14, y: 2 },
+                        Position { x: 14, y: 3 },
+                        Position { x: 14, y: 4 },
+                        Position { x: 15, y: 4 },
+                        Position { x: 16, y: 4 },
+                    ],
+                    terrain_type: "Water".to_string(),
+                    variant_type: "river".to_string(),
+                },
+                // 河流3：之字形河流
+                StaticTerrain {
+                    name: "九曲溪".to_string(),
+                    core_position: Position { x: 7, y: 9 },
+                    positions: vec![
+                        Position { x: 7, y: 9 },
+                        Position { x: 8, y: 9 },
+                        Position { x: 8, y: 10 },
+                        Position { x: 9, y: 10 },
+                        Position { x: 9, y: 11 },
+                    ],
+                    terrain_type: "Water".to_string(),
+                    variant_type: "river".to_string(),
+                },
+
+                // === 森林变体 ===
                 StaticTerrain {
                     name: "青松林".to_string(),
-                    core_position: Position { x: 8, y: 1 },
-                    // 森林占据1x1
-                    positions: vec![Position { x: 8, y: 1 }],
+                    core_position: Position { x: 5, y: 8 },
+                    positions: vec![Position { x: 5, y: 8 }],
                     terrain_type: "Forest".to_string(),
+                    variant_type: "forest".to_string(),
                 },
             ],
         }
@@ -903,6 +983,7 @@ impl GameMap {
                 MapElement::Terrain(Terrain {
                     terrain_type,
                     name: terrain_data.name.clone(),
+                    variant_type: terrain_data.variant_type.clone(),
                 }),
                 terrain_data.core_position,
                 terrain_data.positions.clone(),

@@ -84,6 +84,65 @@
   opacity: 0.8;
 }
 
+/* Terrain variant styles */
+
+/* Mountain variants */
+.tile-terrain-small-mountain {
+  background: linear-gradient(135deg, #cbd5e0 0%, #a0aec0 100%);
+  border-color: #718096;
+  opacity: 0.85;
+}
+
+.tile-terrain-mid-mountain {
+  background: linear-gradient(135deg, #a0aec0 0%, #718096 100%);
+  border-color: #4a5568;
+  opacity: 0.9;
+}
+
+.tile-terrain-large-mountain {
+  background: linear-gradient(135deg, #718096 0%, #4a5568 100%);
+  border-color: #2d3748;
+  opacity: 0.95;
+}
+
+.tile-terrain-mountain {
+  background: linear-gradient(135deg, #a0aec0 0%, #718096 100%);
+  border-color: #4a5568;
+  opacity: 0.9;
+}
+
+/* Water variants */
+.tile-terrain-river {
+  background: linear-gradient(135deg, #81e6d9 0%, #4fd1c5 100%);
+  border-color: #38b2ac;
+  opacity: 0.85;
+}
+
+.tile-terrain-small-lake {
+  background: linear-gradient(135deg, #bee3f8 0%, #90cdf4 100%);
+  border-color: #4299e1;
+  opacity: 0.8;
+}
+
+.tile-terrain-large-lake {
+  background: linear-gradient(135deg, #4299e1 0%, #3182ce 100%);
+  border-color: #2c5282;
+  opacity: 0.9;
+}
+
+.tile-terrain-lake {
+  background: linear-gradient(135deg, #90cdf4 0%, #63b3ed 100%);
+  border-color: #3182ce;
+  opacity: 0.85;
+}
+
+/* Other terrain variants */
+.tile-terrain-forest {
+  background: linear-gradient(135deg, #9ae6b4 0%, #68d391 100%);
+  border-color: #38a169;
+  opacity: 0.85;
+}
+
 .tile-hovered {
   border-width: 2px;
   border-color: #4299e1;
@@ -93,6 +152,23 @@
   border-width: 3px !important;
   border-color: #4299e1 !important;
   box-shadow: 0 0 15px #4299e1 !important;
+}
+
+.tile-blocked {
+  cursor: not-allowed !important;
+  opacity: 0.6;
+  position: relative;
+}
+
+.tile-blocked::after {
+  content: '🚫';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 1.2rem;
+  opacity: 0.7;
+  pointer-events: none;
 }
 
 .tile-icon {

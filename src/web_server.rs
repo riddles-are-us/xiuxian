@@ -500,6 +500,24 @@ async fn move_disciple(
     if let Some(game_mutex) = store.get_game(&game_id) {
         let mut game = game_mutex.lock().await;
 
+        // 先检查目标位置是否可通行（不能移动到地形、建筑等障碍物上）
+        let target_position = crate::map::Position {
+            x: req.x,
+            y: req.y,
+        };
+        if !game.map.is_position_passable(&target_position) {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(ApiResponse::<MoveDiscipleResponse>::error(
+                    "POSITION_BLOCKED".to_string(),
+                    format!(
+                        "目标位置({}, {})被障碍物阻挡，无法移动！",
+                        req.x, req.y
+                    ),
+                )),
+            );
+        }
+
         // 查找弟子
         if let Some(disciple) = game.sect.disciples.iter_mut().find(|d| d.id == disciple_id) {
             let old_position = PositionDto {
@@ -544,11 +562,7 @@ async fn move_disciple(
             disciple.moves_remaining -= distance;
 
             // 更新位置
-            let new_position = crate::map::Position {
-                x: req.x,
-                y: req.y,
-            };
-            disciple.move_to(new_position);
+            disciple.move_to(target_position);
 
             let new_position_dto = PositionDto {
                 x: req.x,
@@ -1083,6 +1097,7 @@ async fn get_map(
                         t.name.clone(),
                         MapElementDetails::Terrain {
                             terrain_type: format!("{:?}", t.terrain_type),
+                            variant_type: t.variant_type.clone(),
                         },
                     ),
                 };

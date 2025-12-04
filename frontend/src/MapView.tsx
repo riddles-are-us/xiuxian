@@ -66,6 +66,26 @@ const MapView: React.FC<MapViewProps> = ({
     return distance <= disciple.movement_range;
   };
 
+  // 检查位置是否可通行（不被地形或建筑阻挡）
+  const isPositionPassable = (x: number, y: number): boolean => {
+    const element = getElementAt(x, y);
+    if (!element) return true; // 空地可通行
+
+    // 地形完全不可通行
+    if (element.element_type === 'Terrain') return false;
+
+    // 村庄、势力、险地、秘境等建筑不可通行
+    if (element.element_type === 'Village' ||
+        element.element_type === 'Faction' ||
+        element.element_type === 'DangerousLocation' ||
+        element.element_type === 'SecretRealm') {
+      return false;
+    }
+
+    // 妖魔不阻挡移动（可以移动到妖魔位置战斗）
+    return true;
+  };
+
   // 处理地图格子点击
   const handleTileClick = async (x: number, y: number) => {
     const disciplesAtPosition = getDisciplesAt(x, y);
@@ -99,6 +119,14 @@ const MapView: React.FC<MapViewProps> = ({
         onMoveError?.(error);
         return;
       }
+
+      // 检查目标位置是否可通行
+      if (!isPositionPassable(x, y)) {
+        const error = `目标位置被障碍物阻挡，无法移动！`;
+        onMoveError?.(error);
+        return;
+      }
+
       await moveDisciple(selectedDisciple.id, x, y);
       return;
     }
@@ -141,8 +169,27 @@ const MapView: React.FC<MapViewProps> = ({
       case 'SecretRealm': return '🌀';
       case 'Monster': return '👹';
       case 'Terrain': {
-        // 根据地形类型显示不同图标
+        // 根据地形变体显示不同图标
+        const variantType = details?.variant_type;
         const terrainType = details?.terrain_type;
+
+        // 优先使用 variant_type
+        // Mountain variants
+        if (variantType === 'small_mountain') return '🗻';
+        if (variantType === 'mid_mountain') return '⛰️';
+        if (variantType === 'large_mountain') return '🏔️';
+        if (variantType === 'mountain') return '⛰️';
+
+        // Water variants
+        if (variantType === 'river') return '🌊';
+        if (variantType === 'small_lake') return '💧';
+        if (variantType === 'large_lake') return '🏞️';
+        if (variantType === 'lake') return '💧';
+
+        // Other variants
+        if (variantType === 'forest') return '🌲';
+
+        // 回退到 terrain_type
         if (terrainType === 'Mountain') return '⛰️';
         if (terrainType === 'Water') return '💧';
         if (terrainType === 'Forest') return '🌲';
@@ -154,14 +201,34 @@ const MapView: React.FC<MapViewProps> = ({
   };
 
   // 获取元素颜色类
-  const getElementColorClass = (elementType: string): string => {
+  const getElementColorClass = (elementType: string, details?: any): string => {
     switch(elementType) {
       case 'Village': return 'tile-village';
       case 'Faction': return 'tile-faction';
       case 'DangerousLocation': return 'tile-dangerous';
       case 'SecretRealm': return 'tile-secret';
       case 'Monster': return 'tile-monster';
-      case 'Terrain': return 'tile-terrain';
+      case 'Terrain': {
+        // 根据地形变体返回不同的样式类
+        const variantType = details?.variant_type;
+
+        // Mountain variants
+        if (variantType === 'small_mountain') return 'tile-terrain-small-mountain';
+        if (variantType === 'mid_mountain') return 'tile-terrain-mid-mountain';
+        if (variantType === 'large_mountain') return 'tile-terrain-large-mountain';
+        if (variantType === 'mountain') return 'tile-terrain-mountain';
+
+        // Water variants
+        if (variantType === 'river') return 'tile-terrain-river';
+        if (variantType === 'small_lake') return 'tile-terrain-small-lake';
+        if (variantType === 'large_lake') return 'tile-terrain-large-lake';
+        if (variantType === 'lake') return 'tile-terrain-lake';
+
+        // Other variants
+        if (variantType === 'forest') return 'tile-terrain-forest';
+
+        return 'tile-terrain';
+      }
       default: return 'tile-empty';
     }
   };
@@ -325,15 +392,38 @@ const MapView: React.FC<MapViewProps> = ({
         );
       case 'Terrain':
         return (
-          <div className="detail-row">
-            <span className="detail-label">地形类型:</span>
-            <span className="detail-value">
-              {details.terrain_type === 'Mountain' && '山脉 ⛰️'}
-              {details.terrain_type === 'Water' && '水域 💧'}
-              {details.terrain_type === 'Forest' && '森林 🌲'}
-              {details.terrain_type === 'Plain' && '平原 🌾'}
-            </span>
-          </div>
+          <>
+            <div className="detail-row">
+              <span className="detail-label">地形类型:</span>
+              <span className="detail-value">
+                {details.terrain_type === 'Mountain' && '山脉 ⛰️'}
+                {details.terrain_type === 'Water' && '水域 💧'}
+                {details.terrain_type === 'Forest' && '森林 🌲'}
+                {details.terrain_type === 'Plain' && '平原 🌾'}
+              </span>
+            </div>
+            {details.variant_type && (
+              <div className="detail-row">
+                <span className="detail-label">变体:</span>
+                <span className="detail-value">
+                  {/* Mountain variants */}
+                  {details.variant_type === 'small_mountain' && '小山峰 🗻'}
+                  {details.variant_type === 'mid_mountain' && '中型山脉 ⛰️'}
+                  {details.variant_type === 'large_mountain' && '大型山脉 🏔️'}
+                  {details.variant_type === 'mountain' && '山脉 ⛰️'}
+
+                  {/* Water variants */}
+                  {details.variant_type === 'river' && '河流 🌊'}
+                  {details.variant_type === 'small_lake' && '小湖 💧'}
+                  {details.variant_type === 'large_lake' && '大湖 🏞️'}
+                  {details.variant_type === 'lake' && '湖泊 💧'}
+
+                  {/* Other variants */}
+                  {details.variant_type === 'forest' && '森林 🌲'}
+                </span>
+              </div>
+            )}
+          </>
         );
       default:
         return null;
@@ -365,6 +455,7 @@ const MapView: React.FC<MapViewProps> = ({
               const isSelected = selectedDisciple && selectedDisciple.position.x === x && selectedDisciple.position.y === y;
               const isInRange = selectedDisciple ? isInMovementRange(x, y, selectedDisciple) : false;
               const isOutOfRange = selectedDisciple && !isInRange && !(selectedDisciple.position.x === x && selectedDisciple.position.y === y);
+              const isBlocked = selectedDisciple && !isPositionPassable(x, y) && !(selectedDisciple.position.x === x && selectedDisciple.position.y === y);
 
               const underAttack = element?.details?.under_attack;
               const isInvading = element?.element_type === 'Monster' && element?.details?.invading_location;
@@ -372,7 +463,7 @@ const MapView: React.FC<MapViewProps> = ({
               return (
                 <div
                   key={`${x}-${y}`}
-                  className={`map-tile ${element ? getElementColorClass(element.element_type) : 'tile-empty'} ${isHovered ? 'tile-hovered' : ''} ${isSelected ? 'tile-selected' : ''}`}
+                  className={`map-tile ${element ? getElementColorClass(element.element_type, element.details) : 'tile-empty'} ${isHovered ? 'tile-hovered' : ''} ${isSelected ? 'tile-selected' : ''} ${isBlocked ? 'tile-blocked' : ''}`}
                   onClick={() => handleTileClick(x, y)}
                   onMouseEnter={() => setHoveredPosition({x, y})}
                   onMouseLeave={() => setHoveredPosition(null)}

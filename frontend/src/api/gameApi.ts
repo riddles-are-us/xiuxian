@@ -127,6 +127,7 @@ export interface MapElement {
     growth_rate?: number;  // 成长速率 (每回合升级概率)
     invading_location?: string;  // 妖魔正在入侵的地点ID
     terrain_type?: string;  // 地形类型：Mountain, Water, Forest, Plain
+    variant_type?: string;  // 地形变体：mountain, river, lake, forest, etc.
   };
 }
 
