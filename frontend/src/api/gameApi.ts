@@ -104,10 +104,14 @@ export interface AttackInfo {
 export interface MapElement {
   element_type: string;
   name: string;
-  position: {
+  position: {  // Core position - for interaction
     x: number;
     y: number;
   };
+  positions?: Array<{  // All occupied positions - for collision/rendering (optional for backwards compatibility)
+    x: number;
+    y: number;
+  }>;
   details: {
     type: string;
     population?: number;

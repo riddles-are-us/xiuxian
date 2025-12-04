@@ -34,7 +34,7 @@ pub struct Terrain {
 }
 
 /// 地图坐标
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq, Hash)]
 pub struct Position {
     pub x: i32,
     pub y: i32,
@@ -44,7 +44,38 @@ pub struct Position {
 #[derive(Debug, Clone)]
 pub struct PositionedElement {
     pub element: MapElement,
-    pub position: Position,
+    pub core_position: Position,        // 核心位置：用于交互（弟子需要到达此位置进行互动）
+    pub positions: Vec<Position>,       // 占据的所有位置：用于碰撞检测（这些位置不可通行）
+}
+
+impl PositionedElement {
+    /// 创建一个单格元素（核心位置和占据位置相同）
+    pub fn new_single(element: MapElement, position: Position) -> Self {
+        Self {
+            element,
+            core_position: position,
+            positions: vec![position],
+        }
+    }
+
+    /// 创建一个多格元素
+    pub fn new_multi(element: MapElement, core_position: Position, positions: Vec<Position>) -> Self {
+        Self {
+            element,
+            core_position,
+            positions,
+        }
+    }
+
+    /// 检查某个位置是否被此元素占据（用于碰撞检测）
+    pub fn occupies_position(&self, pos: &Position) -> bool {
+        self.positions.contains(pos)
+    }
+
+    /// 检查某个位置是否是核心位置（用于交互检测）
+    pub fn is_core_position(&self, pos: &Position) -> bool {
+        self.core_position == *pos
+    }
 }
 
 impl MapElement {
@@ -562,7 +593,8 @@ pub struct StaticMapData {
 #[derive(Debug, Clone)]
 pub struct StaticVillage {
     pub name: String,
-    pub position: Position,
+    pub core_position: Position,        // 交互位置（村庄入口）
+    pub positions: Vec<Position>,       // 占据的所有位置（村庄范围）
     pub population: u32,
     pub prosperity: u32,
 }
@@ -571,7 +603,8 @@ pub struct StaticVillage {
 #[derive(Debug, Clone)]
 pub struct StaticFaction {
     pub name: String,
-    pub position: Position,
+    pub core_position: Position,        // 交互位置（宗门大门）
+    pub positions: Vec<Position>,       // 占据的所有位置（宗门范围）
     pub power_level: u32,
     pub relationship: i32,
 }
@@ -580,7 +613,8 @@ pub struct StaticFaction {
 #[derive(Debug, Clone)]
 pub struct StaticDangerousLocation {
     pub name: String,
-    pub position: Position,
+    pub core_position: Position,        // 交互位置（入口）
+    pub positions: Vec<Position>,       // 占据的所有位置（险地范围）
     pub danger_level: u32,
 }
 
@@ -588,7 +622,8 @@ pub struct StaticDangerousLocation {
 #[derive(Debug, Clone)]
 pub struct StaticSecretRealm {
     pub name: String,
-    pub position: Position,
+    pub core_position: Position,        // 交互位置（秘境入口）
+    pub positions: Vec<Position>,       // 占据的所有位置（秘境范围）
     pub realm_type: String, // "Fire", "Water", etc.
     pub difficulty: u32,
 }
@@ -597,16 +632,17 @@ pub struct StaticSecretRealm {
 #[derive(Debug, Clone)]
 pub struct StaticMonster {
     pub name: String,
-    pub position: Position,
+    pub core_position: Position,        // 妖魔位置（单格，会移动）
     pub level: u32,
     pub is_demon: bool,
 }
 
-/// 静态地形数据
+/// 静态地形数据（地形是不可通行的）
 #[derive(Debug, Clone)]
 pub struct StaticTerrain {
     pub name: String,
-    pub position: Position,
+    pub core_position: Position,        // 地形中心位置
+    pub positions: Vec<Position>,       // 占据的所有位置（不可通行）
     pub terrain_type: String, // "Mountain", "Water", "Forest", "Plain"
 }
 
@@ -633,19 +669,49 @@ impl GameMap {
 
     /// 创建默认的静态地图数据（供用户修改）
     pub fn create_default_static_map() -> StaticMapData {
+        use rand::Rng;
+        let mut rng = rand::thread_rng();
+
+        // 山脉随机选择1x1或1x2 (横向)
+        let mountain_positions = if rng.gen_bool(0.5) {
+            // 1x1 山脉
+            vec![Position { x: 2, y: 2 }]
+        } else {
+            // 1x2 山脉 (横向)
+            vec![
+                Position { x: 2, y: 2 },
+                Position { x: 3, y: 2 },
+            ]
+        };
+
+        let mountain2_positions = if rng.gen_bool(0.5) {
+            // 1x1 山脉
+            vec![Position { x: 17, y: 3 }]
+        } else {
+            // 1x2 山脉 (横向)
+            vec![
+                Position { x: 16, y: 3 },
+                Position { x: 17, y: 3 },
+            ]
+        };
+
         StaticMapData {
             width: 20,
             height: 20,
             villages: vec![
                 StaticVillage {
                     name: "青云村".to_string(),
-                    position: Position { x: 5, y: 5 },
+                    core_position: Position { x: 5, y: 5 },
+                    // 村庄占据1x1
+                    positions: vec![Position { x: 5, y: 5 }],
                     population: 1000,
                     prosperity: 50,
                 },
                 StaticVillage {
                     name: "桃花村".to_string(),
-                    position: Position { x: 15, y: 10 },
+                    core_position: Position { x: 15, y: 10 },
+                    // 村庄占据1x1
+                    positions: vec![Position { x: 15, y: 10 }],
                     population: 800,
                     prosperity: 40,
                 },
@@ -653,7 +719,14 @@ impl GameMap {
             factions: vec![
                 StaticFaction {
                     name: "天剑宗".to_string(),
-                    position: Position { x: 10, y: 15 },
+                    core_position: Position { x: 10, y: 15 },
+                    // 宗门占据2x2区域
+                    positions: vec![
+                        Position { x: 10, y: 15 },
+                        Position { x: 11, y: 15 },
+                        Position { x: 10, y: 16 },
+                        Position { x: 11, y: 16 },
+                    ],
                     power_level: 50,
                     relationship: 20,
                 },
@@ -661,14 +734,18 @@ impl GameMap {
             dangerous_locations: vec![
                 StaticDangerousLocation {
                     name: "黑风谷".to_string(),
-                    position: Position { x: 3, y: 12 },
+                    core_position: Position { x: 3, y: 12 },
+                    // 险地占据1x1
+                    positions: vec![Position { x: 3, y: 12 }],
                     danger_level: 30,
                 },
             ],
             secret_realms: vec![
                 StaticSecretRealm {
                     name: "烈焰洞天".to_string(),
-                    position: Position { x: 18, y: 18 },
+                    core_position: Position { x: 18, y: 18 },
+                    // 秘境只占1x1（入口）
+                    positions: vec![Position { x: 18, y: 18 }],
                     realm_type: "Fire".to_string(),
                     difficulty: 40,
                 },
@@ -676,7 +753,8 @@ impl GameMap {
             monsters: vec![
                 StaticMonster {
                     name: "山野妖兽".to_string(),
-                    position: Position { x: 7, y: 8 },
+                    core_position: Position { x: 7, y: 8 },
+                    // 妖魔只占1x1（会移动）
                     level: 10,
                     is_demon: false,
                 },
@@ -684,25 +762,117 @@ impl GameMap {
             terrains: vec![
                 StaticTerrain {
                     name: "太行山".to_string(),
-                    position: Position { x: 2, y: 2 },
+                    core_position: mountain_positions[0],
+                    // 山脉随机1x1或1x2（不可通行）
+                    positions: mountain_positions,
+                    terrain_type: "Mountain".to_string(),
+                },
+                StaticTerrain {
+                    name: "昆仑山".to_string(),
+                    core_position: mountain2_positions[0],
+                    // 山脉随机1x1或1x2（不可通行）
+                    positions: mountain2_positions,
                     terrain_type: "Mountain".to_string(),
                 },
                 StaticTerrain {
                     name: "玄水湖".to_string(),
-                    position: Position { x: 12, y: 6 },
+                    core_position: Position { x: 12, y: 6 },
+                    // 湖泊占据1x1（不可通行）
+                    positions: vec![Position { x: 12, y: 6 }],
                     terrain_type: "Water".to_string(),
                 },
                 StaticTerrain {
                     name: "青松林".to_string(),
-                    position: Position { x: 8, y: 14 },
+                    core_position: Position { x: 8, y: 1 },
+                    // 森林占据1x1
+                    positions: vec![Position { x: 8, y: 1 }],
                     terrain_type: "Forest".to_string(),
                 },
             ],
         }
     }
 
+    /// 检查静态地图数据中是否有位置冲突
+    fn check_position_collisions(static_data: &StaticMapData) -> Result<(), String> {
+        use std::collections::HashSet;
+        let mut occupied_positions: HashSet<Position> = HashSet::new();
+
+        // 检查村庄
+        for village in &static_data.villages {
+            for pos in &village.positions {
+                if occupied_positions.contains(pos) {
+                    return Err(format!("位置冲突: 村庄 '{}' 在位置 ({}, {}) 与其他元素重叠",
+                        village.name, pos.x, pos.y));
+                }
+                occupied_positions.insert(*pos);
+            }
+        }
+
+        // 检查势力
+        for faction in &static_data.factions {
+            for pos in &faction.positions {
+                if occupied_positions.contains(pos) {
+                    return Err(format!("位置冲突: 势力 '{}' 在位置 ({}, {}) 与其他元素重叠",
+                        faction.name, pos.x, pos.y));
+                }
+                occupied_positions.insert(*pos);
+            }
+        }
+
+        // 检查险地
+        for danger in &static_data.dangerous_locations {
+            for pos in &danger.positions {
+                if occupied_positions.contains(pos) {
+                    return Err(format!("位置冲突: 险地 '{}' 在位置 ({}, {}) 与其他元素重叠",
+                        danger.name, pos.x, pos.y));
+                }
+                occupied_positions.insert(*pos);
+            }
+        }
+
+        // 检查秘境
+        for realm in &static_data.secret_realms {
+            for pos in &realm.positions {
+                if occupied_positions.contains(pos) {
+                    return Err(format!("位置冲突: 秘境 '{}' 在位置 ({}, {}) 与其他元素重叠",
+                        realm.name, pos.x, pos.y));
+                }
+                occupied_positions.insert(*pos);
+            }
+        }
+
+        // 检查妖魔
+        for monster in &static_data.monsters {
+            let pos = &monster.core_position;
+            if occupied_positions.contains(pos) {
+                return Err(format!("位置冲突: 妖魔 '{}' 在位置 ({}, {}) 与其他元素重叠",
+                    monster.name, pos.x, pos.y));
+            }
+            occupied_positions.insert(*pos);
+        }
+
+        // 检查地形
+        for terrain in &static_data.terrains {
+            for pos in &terrain.positions {
+                if occupied_positions.contains(pos) {
+                    return Err(format!("位置冲突: 地形 '{}' 在位置 ({}, {}) 与其他元素重叠",
+                        terrain.name, pos.x, pos.y));
+                }
+                occupied_positions.insert(*pos);
+            }
+        }
+
+        Ok(())
+    }
+
     /// 从静态数据初始化地图
     pub fn initialize_from_static(&mut self, static_data: StaticMapData) {
+        // 检查位置冲突
+        if let Err(error_msg) = Self::check_position_collisions(&static_data) {
+            println!("⚠ 地图初始化警告: {}", error_msg);
+            println!("   建议: 请调整元素位置以避免重叠");
+        }
+
         // 加载配置（用于任务模板）
         match ConfigManager::load() {
             Ok(config) => {
@@ -719,7 +889,7 @@ impl GameMap {
         self.height = static_data.height;
         self.elements.clear();
 
-        // 加载地形
+        // 加载地形（不可通行）
         for terrain_data in &static_data.terrains {
             let terrain_type = match terrain_data.terrain_type.as_str() {
                 "Mountain" => TerrainType::Mountain,
@@ -729,13 +899,14 @@ impl GameMap {
                 _ => TerrainType::Plain,
             };
 
-            self.elements.push(PositionedElement {
-                element: MapElement::Terrain(Terrain {
+            self.elements.push(PositionedElement::new_multi(
+                MapElement::Terrain(Terrain {
                     terrain_type,
                     name: terrain_data.name.clone(),
                 }),
-                position: terrain_data.position,
-            });
+                terrain_data.core_position,
+                terrain_data.positions.clone(),
+            ));
         }
 
         // 加载村庄（使用配置中的任务模板）
@@ -745,15 +916,16 @@ impl GameMap {
                 .map(|v| v.task_templates.clone())
                 .unwrap_or_default();
 
-            self.elements.push(PositionedElement {
-                element: MapElement::Village(Village {
+            self.elements.push(PositionedElement::new_multi(
+                MapElement::Village(Village {
                     name: village_data.name.clone(),
                     population: village_data.population,
                     prosperity: village_data.prosperity,
                     task_templates,
                 }),
-                position: village_data.position,
-            });
+                village_data.core_position,
+                village_data.positions.clone(),
+            ));
         }
 
         // 加载势力（使用配置中的任务模板）
@@ -763,16 +935,17 @@ impl GameMap {
                 .map(|f| (f.friendly_task_templates.clone(), f.hostile_task_templates.clone()))
                 .unwrap_or_default();
 
-            self.elements.push(PositionedElement {
-                element: MapElement::Faction(Faction {
+            self.elements.push(PositionedElement::new_multi(
+                MapElement::Faction(Faction {
                     name: faction_data.name.clone(),
                     power_level: faction_data.power_level,
                     relationship: faction_data.relationship,
                     friendly_task_templates: friendly_templates,
                     hostile_task_templates: hostile_templates,
                 }),
-                position: faction_data.position,
-            });
+                faction_data.core_position,
+                faction_data.positions.clone(),
+            ));
         }
 
         // 加载险地（使用配置中的任务模板）
@@ -782,14 +955,15 @@ impl GameMap {
                 .map(|d| d.task_templates.clone())
                 .unwrap_or_default();
 
-            self.elements.push(PositionedElement {
-                element: MapElement::DangerousLocation(DangerousLocation {
+            self.elements.push(PositionedElement::new_multi(
+                MapElement::DangerousLocation(DangerousLocation {
                     name: danger_data.name.clone(),
                     danger_level: danger_data.danger_level,
                     task_templates,
                 }),
-                position: danger_data.position,
-            });
+                danger_data.core_position,
+                danger_data.positions.clone(),
+            ));
         }
 
         // 加载秘境（使用配置中的任务模板）
@@ -799,18 +973,20 @@ impl GameMap {
                 .map(|r| r.task_templates.clone())
                 .unwrap_or_default();
 
-            self.elements.push(PositionedElement {
-                element: MapElement::SecretRealm(SecretRealm {
+            self.elements.push(PositionedElement::new_multi(
+                MapElement::SecretRealm(SecretRealm {
                     name: realm_data.name.clone(),
                     realm_type: parse_talent_type(&realm_data.realm_type),
                     difficulty: realm_data.difficulty,
                     task_templates,
                 }),
-                position: realm_data.position,
-            });
+                realm_data.core_position,
+                realm_data.positions.clone(),
+            ));
         }
 
         // 加载妖魔（使用配置中的任务模板）
+        // 妖魔是单格，会移动
         for monster_data in &static_data.monsters {
             let task_templates = self.config.monsters.monster_templates
                 .first()
@@ -824,14 +1000,48 @@ impl GameMap {
             );
             monster.is_demon = monster_data.is_demon;
 
-            self.elements.push(PositionedElement {
-                element: MapElement::Monster(monster),
-                position: monster_data.position,
-            });
+            self.elements.push(PositionedElement::new_single(
+                MapElement::Monster(monster),
+                monster_data.core_position,
+            ));
         }
 
         self.static_data = Some(static_data);
         println!("✓ 成功从静态数据初始化地图");
+    }
+
+    /// 检查某个位置是否可通行（用于寻路和移动）
+    pub fn is_position_passable(&self, pos: &Position) -> bool {
+        // 检查是否超出地图边界
+        if pos.x < 0 || pos.x >= self.width || pos.y < 0 || pos.y >= self.height {
+            return false;
+        }
+
+        // 检查是否被任何元素占据（地形、建筑等都是不可通行的）
+        for positioned in &self.elements {
+            if positioned.occupies_position(pos) {
+                // 地形是完全不可通行的
+                if matches!(positioned.element, MapElement::Terrain(_)) {
+                    return false;
+                }
+                // 其他建筑也不可通行（村庄、势力、险地、秘境）
+                // 但妖魔不算障碍物（可以和妖魔在同一位置战斗）
+                if !matches!(positioned.element, MapElement::Monster(_)) {
+                    return false;
+                }
+            }
+        }
+
+        true
+    }
+
+    /// 获取指定位置的所有元素（用于交互）
+    pub fn get_elements_at_core_position(&self, pos: &Position) -> Vec<&MapElement> {
+        self.elements
+            .iter()
+            .filter(|p| p.is_core_position(pos))
+            .map(|p| &p.element)
+            .collect()
     }
 
     /* ===== 旧的程序化生成地图逻辑（已注释，保留用于未来参考） =====
@@ -952,9 +1162,9 @@ impl GameMap {
         for positioned in &mut self.elements {
             let mut element_tasks = positioned.element.generate_tasks(task_id);
 
-            // 为所有从此位置生成的任务设置位置
+            // 为所有从此位置生成的任务设置核心位置（交互位置）
             for task in &mut element_tasks {
-                task.position = Some(positioned.position);
+                task.position = Some(positioned.core_position);
             }
 
             // 如果是妖魔任务，需要记录任务ID
@@ -1052,10 +1262,12 @@ impl GameMap {
                     // 移动：随机选择相邻位置
                     let directions = [(0, 1), (0, -1), (1, 0), (-1, 0)];
                     let (dx, dy) = directions[rng.gen_range(0..directions.len())];
-                    let new_x = (positioned.position.x + dx).max(0).min(self.width - 1);
-                    let new_y = (positioned.position.y + dy).max(0).min(self.height - 1);
+                    let new_x = (positioned.core_position.x + dx).max(0).min(self.width - 1);
+                    let new_y = (positioned.core_position.y + dy).max(0).min(self.height - 1);
+                    let new_position = Position { x: new_x, y: new_y };
 
-                    move_actions.push((i, Position { x: new_x, y: new_y }));
+                    // 只在位置可通行时才移动
+                    move_actions.push((i, new_position));
                 } else {
                     // 修行：提升等级
                     if rng.gen_bool(0.3) {  // 30% 概率成功修行
@@ -1067,12 +1279,43 @@ impl GameMap {
 
         // 执行移动
         for (monster_index, new_position) in move_actions {
-            if let Some(positioned) = self.elements.get_mut(monster_index) {
-                positioned.position = new_position;
+            // 检查新位置是否可通行（需要临时移除自己来检查）
+            let is_passable = {
+                let current_monster_pos = if let Some(elem) = self.elements.get(monster_index) {
+                    elem.core_position
+                } else {
+                    continue;
+                };
 
-                // 检查是否移动到了可入侵的地点
-                if matches!(positioned.element, MapElement::Monster(_)) {
-                    self.check_monster_invasion(monster_index, new_position);
+                // 临时检查：排除自己的位置
+                self.elements.iter().enumerate().all(|(i, positioned)| {
+                    if i == monster_index {
+                        return true; // 跳过自己
+                    }
+                    if positioned.occupies_position(&new_position) {
+                        // 地形不可通行
+                        if matches!(positioned.element, MapElement::Terrain(_)) {
+                            return false;
+                        }
+                        // 建筑不可通行（但可以入侵）
+                        if !matches!(positioned.element, MapElement::Monster(_)) {
+                            // 这里允许移动到建筑位置（用于入侵）
+                            return true;
+                        }
+                    }
+                    true
+                })
+            };
+
+            if is_passable {
+                if let Some(positioned) = self.elements.get_mut(monster_index) {
+                    positioned.core_position = new_position;
+                    positioned.positions = vec![new_position]; // 妖魔只占一格
+
+                    // 检查是否移动到了可入侵的地点
+                    if matches!(positioned.element, MapElement::Monster(_)) {
+                        self.check_monster_invasion(monster_index, new_position);
+                    }
                 }
             }
         }
@@ -1080,12 +1323,12 @@ impl GameMap {
 
     /// 检查妖魔是否入侵了某个地点
     fn check_monster_invasion(&mut self, monster_index: usize, monster_pos: Position) {
-        // 先查找同位置的可入侵元素
+        // 先查找同核心位置的可入侵元素
         let invaded_location_id = self.elements.iter().enumerate()
             .find(|(i, positioned)| {
                 *i != monster_index &&
-                positioned.position.x == monster_pos.x &&
-                positioned.position.y == monster_pos.y &&
+                positioned.core_position.x == monster_pos.x &&
+                positioned.core_position.y == monster_pos.y &&
                 positioned.element.can_be_invaded()
             })
             .map(|(_, positioned)| positioned.element.get_location_id());
@@ -1126,8 +1369,8 @@ impl GameMap {
                                 monster.level * 20,  // 资源奖励
                             );
 
-                            // 设置任务位置为被入侵地点的位置
-                            task.position = Some(invaded_elem.position);
+                            // 设置任务位置为被入侵地点的核心位置
+                            task.position = Some(invaded_elem.core_position);
 
                             tasks.push(task);
                             task_id += 1;

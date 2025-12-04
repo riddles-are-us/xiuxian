@@ -1091,9 +1091,13 @@ async fn get_map(
                     element_type,
                     name,
                     position: PositionDto {
-                        x: positioned.position.x,
-                        y: positioned.position.y,
+                        x: positioned.core_position.x,
+                        y: positioned.core_position.y,
                     },
+                    positions: positioned.positions.iter().map(|pos| PositionDto {
+                        x: pos.x,
+                        y: pos.y,
+                    }).collect(),
                     details,
                 }
             })

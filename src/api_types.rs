@@ -368,7 +368,8 @@ pub struct TribulationResponse {
 pub struct MapElementDto {
     pub element_type: String,
     pub name: String,
-    pub position: PositionDto,
+    pub position: PositionDto,  // Core position for interaction
+    pub positions: Vec<PositionDto>,  // All occupied positions for collision/rendering
     pub details: MapElementDetails,
 }
 

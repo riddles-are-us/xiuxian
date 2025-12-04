@@ -31,11 +31,23 @@ const MapView: React.FC<MapViewProps> = ({
   const [hoveredPosition, setHoveredPosition] = useState<{x: number, y: number} | null>(null);
   const [selectedDisciple, setSelectedDisciple] = useState<Disciple | null>(null);
 
-  // 获取指定位置的元素
+  // 检查元素是否占据某个位置（用于渲染和碰撞检测）
+  const elementOccupiesPosition = (element: MapElement, x: number, y: number): boolean => {
+    if (element.positions && element.positions.length > 0) {
+      return element.positions.some(pos => pos.x === x && pos.y === y);
+    }
+    // Fallback to core position if positions array not available
+    return element.position.x === x && element.position.y === y;
+  };
+
+  // 获取指定位置的元素（用于渲染）
   const getElementAt = (x: number, y: number): MapElement | undefined => {
-    return mapData.elements.find(
-      el => el.position.x === x && el.position.y === y
-    );
+    return mapData.elements.find(el => elementOccupiesPosition(el, x, y));
+  };
+
+  // 获取核心位置的元素（用于交互）
+  const getElementAtCorePosition = (x: number, y: number): MapElement | undefined => {
+    return mapData.elements.find(el => el.position.x === x && el.position.y === y);
   };
 
   // 获取指定位置的弟子
@@ -92,7 +104,11 @@ const MapView: React.FC<MapViewProps> = ({
     }
 
     // 否则，选择该位置的地图元素
-    const element = getElementAt(x, y);
+    // 优先选择核心位置的元素（用于交互），否则选择占据该位置的元素（用于显示）
+    const coreElement = getElementAtCorePosition(x, y);
+    const occupiedElement = getElementAt(x, y);
+    const element = coreElement || occupiedElement;
+
     if (element) {
       onElementSelected?.(element);
       onDiscipleSelected?.(null);
@@ -342,6 +358,8 @@ const MapView: React.FC<MapViewProps> = ({
           {Array.from({ length: mapData.height }).map((_, y) =>
             Array.from({ length: mapData.width }).map((_, x) => {
               const element = getElementAt(x, y);
+              const coreElement = getElementAtCorePosition(x, y);
+              const isCorePosition = coreElement !== undefined;
               const disciplesHere = getDisciplesAt(x, y);
               const isHovered = hoveredPosition?.x === x && hoveredPosition?.y === y;
               const isSelected = selectedDisciple && selectedDisciple.position.x === x && selectedDisciple.position.y === y;
@@ -373,7 +391,30 @@ const MapView: React.FC<MapViewProps> = ({
                   }}
                 >
                   {element && (
-                    <span className="tile-icon">{getElementIcon(element.element_type, element.details)}</span>
+                    <>
+                      <span className="tile-icon">{getElementIcon(element.element_type, element.details)}</span>
+                      {/* Show core position indicator for multi-tile elements */}
+                      {isCorePosition && element.positions && element.positions.length > 1 && (
+                        <span style={{
+                          position: 'absolute',
+                          top: '2px',
+                          left: '2px',
+                          fontSize: '10px',
+                          backgroundColor: 'rgba(66, 153, 225, 0.8)',
+                          color: 'white',
+                          borderRadius: '50%',
+                          width: '14px',
+                          height: '14px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontWeight: 'bold',
+                          zIndex: 5
+                        }}>
+                          ⭐
+                        </span>
+                      )}
+                    </>
                   )}
                   {disciplesHere.length > 0 && (
                     <span style={{
