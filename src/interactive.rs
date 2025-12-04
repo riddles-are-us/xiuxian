@@ -43,7 +43,13 @@ impl InteractiveGame {
 
     pub fn new_with_mode(sect_name: String, is_web_mode: bool) -> Self {
         let mut map = GameMap::new();
-        map.initialize();
+
+        // 使用静态地图数据初始化（早期版本）
+        let static_map_data = GameMap::create_default_static_map();
+        map.initialize_from_static(static_map_data);
+
+        // 旧的程序化生成地图初始化（已注释）
+        // map.initialize();
 
         let mut sect = Sect::new(sect_name);
 

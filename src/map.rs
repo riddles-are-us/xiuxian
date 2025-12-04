@@ -545,6 +545,71 @@ impl Monster {
     }
 }
 
+/// 静态地图数据（用于早期版本）
+#[derive(Debug, Clone)]
+pub struct StaticMapData {
+    pub width: i32,
+    pub height: i32,
+    pub villages: Vec<StaticVillage>,
+    pub factions: Vec<StaticFaction>,
+    pub dangerous_locations: Vec<StaticDangerousLocation>,
+    pub secret_realms: Vec<StaticSecretRealm>,
+    pub monsters: Vec<StaticMonster>,
+    pub terrains: Vec<StaticTerrain>,
+}
+
+/// 静态村庄数据
+#[derive(Debug, Clone)]
+pub struct StaticVillage {
+    pub name: String,
+    pub position: Position,
+    pub population: u32,
+    pub prosperity: u32,
+}
+
+/// 静态势力数据
+#[derive(Debug, Clone)]
+pub struct StaticFaction {
+    pub name: String,
+    pub position: Position,
+    pub power_level: u32,
+    pub relationship: i32,
+}
+
+/// 静态险地数据
+#[derive(Debug, Clone)]
+pub struct StaticDangerousLocation {
+    pub name: String,
+    pub position: Position,
+    pub danger_level: u32,
+}
+
+/// 静态秘境数据
+#[derive(Debug, Clone)]
+pub struct StaticSecretRealm {
+    pub name: String,
+    pub position: Position,
+    pub realm_type: String, // "Fire", "Water", etc.
+    pub difficulty: u32,
+}
+
+/// 静态妖魔数据
+#[derive(Debug, Clone)]
+pub struct StaticMonster {
+    pub name: String,
+    pub position: Position,
+    pub level: u32,
+    pub is_demon: bool,
+}
+
+/// 静态地形数据
+#[derive(Debug, Clone)]
+pub struct StaticTerrain {
+    pub name: String,
+    pub position: Position,
+    pub terrain_type: String, // "Mountain", "Water", "Forest", "Plain"
+}
+
 /// 游戏地图
 #[derive(Debug)]
 pub struct GameMap {
@@ -552,6 +617,7 @@ pub struct GameMap {
     pub width: i32,
     pub height: i32,
     pub config: ConfigManager,
+    pub static_data: Option<StaticMapData>, // 静态地图数据
 }
 
 impl GameMap {
@@ -561,10 +627,216 @@ impl GameMap {
             width: 20,  // 地图宽度
             height: 20, // 地图高度
             config: ConfigManager::create_default(),
+            static_data: None,
         }
     }
 
-    /// 初始化地图（从配置加载）
+    /// 创建默认的静态地图数据（供用户修改）
+    pub fn create_default_static_map() -> StaticMapData {
+        StaticMapData {
+            width: 20,
+            height: 20,
+            villages: vec![
+                StaticVillage {
+                    name: "青云村".to_string(),
+                    position: Position { x: 5, y: 5 },
+                    population: 1000,
+                    prosperity: 50,
+                },
+                StaticVillage {
+                    name: "桃花村".to_string(),
+                    position: Position { x: 15, y: 10 },
+                    population: 800,
+                    prosperity: 40,
+                },
+            ],
+            factions: vec![
+                StaticFaction {
+                    name: "天剑宗".to_string(),
+                    position: Position { x: 10, y: 15 },
+                    power_level: 50,
+                    relationship: 20,
+                },
+            ],
+            dangerous_locations: vec![
+                StaticDangerousLocation {
+                    name: "黑风谷".to_string(),
+                    position: Position { x: 3, y: 12 },
+                    danger_level: 30,
+                },
+            ],
+            secret_realms: vec![
+                StaticSecretRealm {
+                    name: "烈焰洞天".to_string(),
+                    position: Position { x: 18, y: 18 },
+                    realm_type: "Fire".to_string(),
+                    difficulty: 40,
+                },
+            ],
+            monsters: vec![
+                StaticMonster {
+                    name: "山野妖兽".to_string(),
+                    position: Position { x: 7, y: 8 },
+                    level: 10,
+                    is_demon: false,
+                },
+            ],
+            terrains: vec![
+                StaticTerrain {
+                    name: "太行山".to_string(),
+                    position: Position { x: 2, y: 2 },
+                    terrain_type: "Mountain".to_string(),
+                },
+                StaticTerrain {
+                    name: "玄水湖".to_string(),
+                    position: Position { x: 12, y: 6 },
+                    terrain_type: "Water".to_string(),
+                },
+                StaticTerrain {
+                    name: "青松林".to_string(),
+                    position: Position { x: 8, y: 14 },
+                    terrain_type: "Forest".to_string(),
+                },
+            ],
+        }
+    }
+
+    /// 从静态数据初始化地图
+    pub fn initialize_from_static(&mut self, static_data: StaticMapData) {
+        // 加载配置（用于任务模板）
+        match ConfigManager::load() {
+            Ok(config) => {
+                println!("✓ 成功加载配置文件");
+                self.config = config;
+            }
+            Err(e) => {
+                println!("⚠ 加载配置失败: {}, 使用默认配置", e);
+                self.config = ConfigManager::create_default();
+            }
+        }
+
+        self.width = static_data.width;
+        self.height = static_data.height;
+        self.elements.clear();
+
+        // 加载地形
+        for terrain_data in &static_data.terrains {
+            let terrain_type = match terrain_data.terrain_type.as_str() {
+                "Mountain" => TerrainType::Mountain,
+                "Water" => TerrainType::Water,
+                "Forest" => TerrainType::Forest,
+                "Plain" => TerrainType::Plain,
+                _ => TerrainType::Plain,
+            };
+
+            self.elements.push(PositionedElement {
+                element: MapElement::Terrain(Terrain {
+                    terrain_type,
+                    name: terrain_data.name.clone(),
+                }),
+                position: terrain_data.position,
+            });
+        }
+
+        // 加载村庄（使用配置中的任务模板）
+        for village_data in &static_data.villages {
+            let task_templates = self.config.map_elements.villages
+                .first()
+                .map(|v| v.task_templates.clone())
+                .unwrap_or_default();
+
+            self.elements.push(PositionedElement {
+                element: MapElement::Village(Village {
+                    name: village_data.name.clone(),
+                    population: village_data.population,
+                    prosperity: village_data.prosperity,
+                    task_templates,
+                }),
+                position: village_data.position,
+            });
+        }
+
+        // 加载势力（使用配置中的任务模板）
+        for faction_data in &static_data.factions {
+            let (friendly_templates, hostile_templates) = self.config.map_elements.factions
+                .first()
+                .map(|f| (f.friendly_task_templates.clone(), f.hostile_task_templates.clone()))
+                .unwrap_or_default();
+
+            self.elements.push(PositionedElement {
+                element: MapElement::Faction(Faction {
+                    name: faction_data.name.clone(),
+                    power_level: faction_data.power_level,
+                    relationship: faction_data.relationship,
+                    friendly_task_templates: friendly_templates,
+                    hostile_task_templates: hostile_templates,
+                }),
+                position: faction_data.position,
+            });
+        }
+
+        // 加载险地（使用配置中的任务模板）
+        for danger_data in &static_data.dangerous_locations {
+            let task_templates = self.config.map_elements.dangerous_locations
+                .first()
+                .map(|d| d.task_templates.clone())
+                .unwrap_or_default();
+
+            self.elements.push(PositionedElement {
+                element: MapElement::DangerousLocation(DangerousLocation {
+                    name: danger_data.name.clone(),
+                    danger_level: danger_data.danger_level,
+                    task_templates,
+                }),
+                position: danger_data.position,
+            });
+        }
+
+        // 加载秘境（使用配置中的任务模板）
+        for realm_data in &static_data.secret_realms {
+            let task_templates = self.config.map_elements.secret_realms
+                .first()
+                .map(|r| r.task_templates.clone())
+                .unwrap_or_default();
+
+            self.elements.push(PositionedElement {
+                element: MapElement::SecretRealm(SecretRealm {
+                    name: realm_data.name.clone(),
+                    realm_type: parse_talent_type(&realm_data.realm_type),
+                    difficulty: realm_data.difficulty,
+                    task_templates,
+                }),
+                position: realm_data.position,
+            });
+        }
+
+        // 加载妖魔（使用配置中的任务模板）
+        for monster_data in &static_data.monsters {
+            let task_templates = self.config.monsters.monster_templates
+                .first()
+                .map(|m| m.task_templates.clone())
+                .unwrap_or_default();
+
+            let mut monster = Monster::new(
+                monster_data.name.clone(),
+                monster_data.level,
+                task_templates,
+            );
+            monster.is_demon = monster_data.is_demon;
+
+            self.elements.push(PositionedElement {
+                element: MapElement::Monster(monster),
+                position: monster_data.position,
+            });
+        }
+
+        self.static_data = Some(static_data);
+        println!("✓ 成功从静态数据初始化地图");
+    }
+
+    /* ===== 旧的程序化生成地图逻辑（已注释，保留用于未来参考） =====
+
+    /// 初始化地图（从配置加载 - 旧版程序化生成）
     pub fn initialize(&mut self) {
         // 加载配置
         match ConfigManager::load() {
@@ -578,10 +850,10 @@ impl GameMap {
             }
         }
 
-        // 生成基础地形元素
+        // 生成基础地形元素（随机位置）
         self.generate_terrain();
 
-        // 从配置加载村庄
+        // 从配置加载村庄（使用配置文件中的位置）
         for village_template in &self.config.map_elements.villages {
             self.elements.push(PositionedElement {
                 element: MapElement::Village(Village::from_template(village_template)),
@@ -592,7 +864,7 @@ impl GameMap {
             });
         }
 
-        // 从配置加载势力
+        // 从配置加载势力（使用配置文件中的位置）
         for faction_template in &self.config.map_elements.factions {
             self.elements.push(PositionedElement {
                 element: MapElement::Faction(Faction::from_template(faction_template)),
@@ -603,7 +875,7 @@ impl GameMap {
             });
         }
 
-        // 从配置加载险地
+        // 从配置加载险地（使用配置文件中的位置）
         for dangerous_template in &self.config.map_elements.dangerous_locations {
             self.elements.push(PositionedElement {
                 element: MapElement::DangerousLocation(
@@ -616,7 +888,7 @@ impl GameMap {
             });
         }
 
-        // 从配置加载秘境
+        // 从配置加载秘境（使用配置文件中的位置）
         for realm_template in &self.config.map_elements.secret_realms {
             self.elements.push(PositionedElement {
                 element: MapElement::SecretRealm(SecretRealm::from_template(realm_template)),
@@ -627,7 +899,7 @@ impl GameMap {
             });
         }
 
-        // 从配置加载初始妖魔
+        // 从配置加载初始妖魔（使用配置文件中的位置）
         for monster_template in &self.config.monsters.monster_templates {
             if let Some(pos) = &monster_template.position {
                 self.elements.push(PositionedElement {
@@ -641,7 +913,7 @@ impl GameMap {
         }
     }
 
-    /// 生成基础地形元素
+    /// 生成基础地形元素（旧版 - 随机生成地形位置）
     fn generate_terrain(&mut self) {
         use rand::Rng;
         let mut rng = rand::thread_rng();
@@ -669,6 +941,8 @@ impl GameMap {
             });
         }
     }
+
+    ===== 旧的程序化生成地图逻辑结束 ===== */
 
     /// 获取所有可用任务
     pub fn get_available_tasks(&mut self) -> Vec<Task> {
@@ -729,6 +1003,7 @@ impl GameMap {
             }
         }
 
+        /* ===== 旧的随机妖魔生成逻辑（已注释，保留用于未来参考） =====
         // 可能出现新的怪物（从配置的随机名称池中选择）
         let spawn_chance = self.config.monsters.spawn_rules.spawn_chance;
         if rng.gen_bool(spawn_chance) {
@@ -756,6 +1031,7 @@ impl GameMap {
                 });
             }
         }
+        ===== 旧的随机妖魔生成逻辑结束 ===== */
     }
 
     /// 妖魔行动（移动或修行）
