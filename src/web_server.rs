@@ -1047,6 +1047,12 @@ async fn get_map(
                 let location_id = positioned.element.get_location_id();
                 let under_attack = attacks.get(&location_id).cloned();
 
+                // Convert positions once for reuse
+                let positions_dto: Vec<PositionDto> = positioned.positions.iter().map(|pos| PositionDto {
+                    x: pos.x,
+                    y: pos.y,
+                }).collect();
+
                 let (element_type, name, details) = match &positioned.element {
                     MapElement::Village(v) => (
                         "Village".to_string(),
@@ -1054,6 +1060,8 @@ async fn get_map(
                         MapElementDetails::Village {
                             population: v.population,
                             prosperity: v.prosperity,
+                            level: v.prosperity.max(1),  // Use prosperity as level
+                            positions: positions_dto.clone(),
                             under_attack,
                         },
                     ),
@@ -1063,6 +1071,8 @@ async fn get_map(
                         MapElementDetails::Faction {
                             power_level: f.power_level,
                             relationship: f.relationship,
+                            level: f.power_level,  // Use power_level as level
+                            positions: positions_dto.clone(),
                             under_attack,
                         },
                     ),
@@ -1071,6 +1081,8 @@ async fn get_map(
                         d.name.clone(),
                         MapElementDetails::DangerousLocation {
                             danger_level: d.danger_level,
+                            level: d.danger_level,  // Use danger_level as level
+                            positions: positions_dto.clone(),
                         },
                     ),
                     MapElement::SecretRealm(s) => (
@@ -1079,6 +1091,8 @@ async fn get_map(
                         MapElementDetails::SecretRealm {
                             realm_type: format!("{:?}", s.realm_type),
                             difficulty: s.difficulty,
+                            level: s.difficulty,  // Use difficulty as level
+                            positions: positions_dto.clone(),
                             under_attack,
                         },
                     ),
@@ -1098,6 +1112,7 @@ async fn get_map(
                         MapElementDetails::Terrain {
                             terrain_type: format!("{:?}", t.terrain_type),
                             variant_type: t.variant_type.clone(),
+                            positions: positions_dto.clone(),
                         },
                     ),
                 };
@@ -1109,10 +1124,6 @@ async fn get_map(
                         x: positioned.core_position.x,
                         y: positioned.core_position.y,
                     },
-                    positions: positioned.positions.iter().map(|pos| PositionDto {
-                        x: pos.x,
-                        y: pos.y,
-                    }).collect(),
                     details,
                 }
             })

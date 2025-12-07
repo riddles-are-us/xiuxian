@@ -670,7 +670,9 @@ impl GameMap {
     }
 
     /// 创建默认的静态地图数据（供用户修改）
-    pub fn create_default_static_map() -> StaticMapData {
+    /// Old default map (preserved for reference)
+    #[allow(dead_code)]
+    pub fn create_default_static_map_old() -> StaticMapData {
         use rand::Rng;
         let mut rng = rand::thread_rng();
 
@@ -867,6 +869,410 @@ impl GameMap {
                     positions: vec![Position { x: 5, y: 8 }],
                     terrain_type: "Forest".to_string(),
                     variant_type: "forest".to_string(),
+                },
+            ],
+        }
+    }
+
+    /// 创建新的默认静态地图数据（匹配Unity前端布局）
+    pub fn create_default_static_map() -> StaticMapData {
+        StaticMapData {
+            width: 20,
+            height: 20,
+            villages: vec![],  // No villages in this map
+            factions: vec![
+                StaticFaction {
+                    name: "天剑门".to_string(),
+                    core_position: Position { x: 9, y: 9 },
+                    positions: vec![
+                        Position { x: 9, y: 9 },
+                        Position { x: 10, y: 9 },
+                        Position { x: 9, y: 10 },
+                        Position { x: 10, y: 10 },
+                    ],
+                    power_level: 75,
+                    relationship: 30,
+                },
+            ],
+            dangerous_locations: vec![],  // No dangerous locations
+            secret_realms: vec![],  // No secret realms
+            monsters: vec![],  // No monsters
+            terrains: vec![
+                // === 河流 1 - 每个格子单独一个元素 ===
+                StaticTerrain {
+                    name: "河流".to_string(),
+                    core_position: Position { x: 14, y: 5 },
+                    positions: vec![Position { x: 14, y: 5 }],
+                    terrain_type: "Water".to_string(),
+                    variant_type: "river".to_string(),
+                },
+                StaticTerrain {
+                    name: "河流".to_string(),
+                    core_position: Position { x: 13, y: 5 },
+                    positions: vec![Position { x: 13, y: 5 }],
+                    terrain_type: "Water".to_string(),
+                    variant_type: "river".to_string(),
+                },
+                StaticTerrain {
+                    name: "河流".to_string(),
+                    core_position: Position { x: 12, y: 5 },
+                    positions: vec![Position { x: 12, y: 5 }],
+                    terrain_type: "Water".to_string(),
+                    variant_type: "river".to_string(),
+                },
+                StaticTerrain {
+                    name: "河流".to_string(),
+                    core_position: Position { x: 12, y: 4 },
+                    positions: vec![Position { x: 12, y: 4 }],
+                    terrain_type: "Water".to_string(),
+                    variant_type: "river".to_string(),
+                },
+                StaticTerrain {
+                    name: "河流".to_string(),
+                    core_position: Position { x: 12, y: 3 },
+                    positions: vec![Position { x: 12, y: 3 }],
+                    terrain_type: "Water".to_string(),
+                    variant_type: "river".to_string(),
+                },
+                StaticTerrain {
+                    name: "河流".to_string(),
+                    core_position: Position { x: 11, y: 3 },
+                    positions: vec![Position { x: 11, y: 3 }],
+                    terrain_type: "Water".to_string(),
+                    variant_type: "river".to_string(),
+                },
+                StaticTerrain {
+                    name: "河流".to_string(),
+                    core_position: Position { x: 10, y: 3 },
+                    positions: vec![Position { x: 10, y: 3 }],
+                    terrain_type: "Water".to_string(),
+                    variant_type: "river".to_string(),
+                },
+                StaticTerrain {
+                    name: "河流".to_string(),
+                    core_position: Position { x: 9, y: 3 },
+                    positions: vec![Position { x: 9, y: 3 }],
+                    terrain_type: "Water".to_string(),
+                    variant_type: "river".to_string(),
+                },
+                StaticTerrain {
+                    name: "河流".to_string(),
+                    core_position: Position { x: 9, y: 4 },
+                    positions: vec![Position { x: 9, y: 4 }],
+                    terrain_type: "Water".to_string(),
+                    variant_type: "river".to_string(),
+                },
+                StaticTerrain {
+                    name: "河流".to_string(),
+                    core_position: Position { x: 9, y: 5 },
+                    positions: vec![Position { x: 9, y: 5 }],
+                    terrain_type: "Water".to_string(),
+                    variant_type: "river".to_string(),
+                },
+                StaticTerrain {
+                    name: "河流".to_string(),
+                    core_position: Position { x: 9, y: 7 },
+                    positions: vec![Position { x: 9, y: 7 }],
+                    terrain_type: "Water".to_string(),
+                    variant_type: "river".to_string(),
+                },
+
+                // === 河流 2 - 每个格子单独一个元素 ===
+                StaticTerrain {
+                    name: "河流".to_string(),
+                    core_position: Position { x: 5, y: 6 },
+                    positions: vec![Position { x: 5, y: 6 }],
+                    terrain_type: "Water".to_string(),
+                    variant_type: "river".to_string(),
+                },
+                StaticTerrain {
+                    name: "河流".to_string(),
+                    core_position: Position { x: 5, y: 7 },
+                    positions: vec![Position { x: 5, y: 7 }],
+                    terrain_type: "Water".to_string(),
+                    variant_type: "river".to_string(),
+                },
+                StaticTerrain {
+                    name: "河流".to_string(),
+                    core_position: Position { x: 5, y: 8 },
+                    positions: vec![Position { x: 5, y: 8 }],
+                    terrain_type: "Water".to_string(),
+                    variant_type: "river".to_string(),
+                },
+                StaticTerrain {
+                    name: "河流".to_string(),
+                    core_position: Position { x: 6, y: 8 },
+                    positions: vec![Position { x: 6, y: 8 }],
+                    terrain_type: "Water".to_string(),
+                    variant_type: "river".to_string(),
+                },
+                StaticTerrain {
+                    name: "河流".to_string(),
+                    core_position: Position { x: 6, y: 9 },
+                    positions: vec![Position { x: 6, y: 9 }],
+                    terrain_type: "Water".to_string(),
+                    variant_type: "river".to_string(),
+                },
+                StaticTerrain {
+                    name: "河流".to_string(),
+                    core_position: Position { x: 6, y: 10 },
+                    positions: vec![Position { x: 6, y: 10 }],
+                    terrain_type: "Water".to_string(),
+                    variant_type: "river".to_string(),
+                },
+                StaticTerrain {
+                    name: "河流".to_string(),
+                    core_position: Position { x: 7, y: 10 },
+                    positions: vec![Position { x: 7, y: 10 }],
+                    terrain_type: "Water".to_string(),
+                    variant_type: "river".to_string(),
+                },
+                StaticTerrain {
+                    name: "河流".to_string(),
+                    core_position: Position { x: 8, y: 10 },
+                    positions: vec![Position { x: 8, y: 10 }],
+                    terrain_type: "Water".to_string(),
+                    variant_type: "river".to_string(),
+                },
+                StaticTerrain {
+                    name: "河流".to_string(),
+                    core_position: Position { x: 5, y: 10 },
+                    positions: vec![Position { x: 5, y: 10 }],
+                    terrain_type: "Water".to_string(),
+                    variant_type: "river".to_string(),
+                },
+                StaticTerrain {
+                    name: "河流".to_string(),
+                    core_position: Position { x: 4, y: 10 },
+                    positions: vec![Position { x: 4, y: 10 }],
+                    terrain_type: "Water".to_string(),
+                    variant_type: "river".to_string(),
+                },
+
+                // === 山脉 ===
+                // mountain3 - vertical (1x2)
+                StaticTerrain {
+                    name: "青峰岭".to_string(),
+                    core_position: Position { x: 7, y: 7 },
+                    positions: vec![Position { x: 7, y: 7 }, Position { x: 7, y: 8 }],
+                    terrain_type: "Mountain".to_string(),
+                    variant_type: "mountain3".to_string(),
+                },
+                // mountain2 - single
+                StaticTerrain {
+                    name: "孤峰".to_string(),
+                    core_position: Position { x: 10, y: 7 },
+                    positions: vec![Position { x: 10, y: 7 }],
+                    terrain_type: "Mountain".to_string(),
+                    variant_type: "mountain2".to_string(),
+                },
+                // mountain1 - single
+                StaticTerrain {
+                    name: "小石峰".to_string(),
+                    core_position: Position { x: 5, y: 4 },
+                    positions: vec![Position { x: 5, y: 4 }],
+                    terrain_type: "Mountain".to_string(),
+                    variant_type: "mountain1".to_string(),
+                },
+                // mountain3 - vertical
+                StaticTerrain {
+                    name: "双子峰".to_string(),
+                    core_position: Position { x: 4, y: 4 },
+                    positions: vec![Position { x: 4, y: 4 }, Position { x: 4, y: 5 }],
+                    terrain_type: "Mountain".to_string(),
+                    variant_type: "mountain3".to_string(),
+                },
+                // mountain4 - horizontal
+                StaticTerrain {
+                    name: "横岭".to_string(),
+                    core_position: Position { x: 3, y: 6 },
+                    positions: vec![Position { x: 3, y: 6 }, Position { x: 4, y: 6 }],
+                    terrain_type: "Mountain".to_string(),
+                    variant_type: "mountain4".to_string(),
+                },
+                // mountain1 - single
+                StaticTerrain {
+                    name: "独峰".to_string(),
+                    core_position: Position { x: 3, y: 8 },
+                    positions: vec![Position { x: 3, y: 8 }],
+                    terrain_type: "Mountain".to_string(),
+                    variant_type: "mountain1".to_string(),
+                },
+                // mountain3 - vertical
+                StaticTerrain {
+                    name: "南峰".to_string(),
+                    core_position: Position { x: 4, y: 12 },
+                    positions: vec![Position { x: 4, y: 12 }, Position { x: 4, y: 13 }],
+                    terrain_type: "Mountain".to_string(),
+                    variant_type: "mountain3".to_string(),
+                },
+                // mountain2 - single
+                StaticTerrain {
+                    name: "西峰".to_string(),
+                    core_position: Position { x: 3, y: 11 },
+                    positions: vec![Position { x: 3, y: 11 }],
+                    terrain_type: "Mountain".to_string(),
+                    variant_type: "mountain2".to_string(),
+                },
+                // mountain3 - vertical
+                StaticTerrain {
+                    name: "云峰".to_string(),
+                    core_position: Position { x: 2, y: 7 },
+                    positions: vec![Position { x: 2, y: 7 }, Position { x: 2, y: 8 }],
+                    terrain_type: "Mountain".to_string(),
+                    variant_type: "mountain3".to_string(),
+                },
+                // mountain4 - horizontal
+                StaticTerrain {
+                    name: "雾岭".to_string(),
+                    core_position: Position { x: 2, y: 9 },
+                    positions: vec![Position { x: 2, y: 9 }, Position { x: 3, y: 9 }],
+                    terrain_type: "Mountain".to_string(),
+                    variant_type: "mountain4".to_string(),
+                },
+                // mountain2 - single
+                StaticTerrain {
+                    name: "寒峰".to_string(),
+                    core_position: Position { x: 2, y: 10 },
+                    positions: vec![Position { x: 2, y: 10 }],
+                    terrain_type: "Mountain".to_string(),
+                    variant_type: "mountain2".to_string(),
+                },
+                // mountain1 - single
+                StaticTerrain {
+                    name: "翠峰".to_string(),
+                    core_position: Position { x: 5, y: 9 },
+                    positions: vec![Position { x: 5, y: 9 }],
+                    terrain_type: "Mountain".to_string(),
+                    variant_type: "mountain1".to_string(),
+                },
+                // mountain3 - vertical
+                StaticTerrain {
+                    name: "南岭".to_string(),
+                    core_position: Position { x: 7, y: 12 },
+                    positions: vec![Position { x: 7, y: 12 }, Position { x: 7, y: 13 }],
+                    terrain_type: "Mountain".to_string(),
+                    variant_type: "mountain3".to_string(),
+                },
+                // mountain4 - horizontal
+                StaticTerrain {
+                    name: "东岭".to_string(),
+                    core_position: Position { x: 7, y: 14 },
+                    positions: vec![Position { x: 7, y: 14 }, Position { x: 8, y: 14 }],
+                    terrain_type: "Mountain".to_string(),
+                    variant_type: "mountain4".to_string(),
+                },
+                // mountain1 - single
+                StaticTerrain {
+                    name: "孤峰".to_string(),
+                    core_position: Position { x: 7, y: 15 },
+                    positions: vec![Position { x: 7, y: 15 }],
+                    terrain_type: "Mountain".to_string(),
+                    variant_type: "mountain1".to_string(),
+                },
+                // mountain4 - horizontal
+                StaticTerrain {
+                    name: "石岭".to_string(),
+                    core_position: Position { x: 8, y: 15 },
+                    positions: vec![Position { x: 8, y: 15 }, Position { x: 9, y: 15 }],
+                    terrain_type: "Mountain".to_string(),
+                    variant_type: "mountain4".to_string(),
+                },
+                // mountain2 - single
+                StaticTerrain {
+                    name: "峻峰".to_string(),
+                    core_position: Position { x: 10, y: 14 },
+                    positions: vec![Position { x: 10, y: 14 }],
+                    terrain_type: "Mountain".to_string(),
+                    variant_type: "mountain2".to_string(),
+                },
+                // mountain1 - single
+                StaticTerrain {
+                    name: "松峰".to_string(),
+                    core_position: Position { x: 11, y: 13 },
+                    positions: vec![Position { x: 11, y: 13 }],
+                    terrain_type: "Mountain".to_string(),
+                    variant_type: "mountain1".to_string(),
+                },
+                // mountain4 - horizontal
+                StaticTerrain {
+                    name: "平岭".to_string(),
+                    core_position: Position { x: 10, y: 12 },
+                    positions: vec![Position { x: 10, y: 12 }, Position { x: 11, y: 12 }],
+                    terrain_type: "Mountain".to_string(),
+                    variant_type: "mountain4".to_string(),
+                },
+                // mountain4 - horizontal
+                StaticTerrain {
+                    name: "云岭".to_string(),
+                    core_position: Position { x: 11, y: 14 },
+                    positions: vec![Position { x: 11, y: 14 }, Position { x: 12, y: 14 }],
+                    terrain_type: "Mountain".to_string(),
+                    variant_type: "mountain4".to_string(),
+                },
+                // mountain1 - single
+                StaticTerrain {
+                    name: "秀峰".to_string(),
+                    core_position: Position { x: 12, y: 11 },
+                    positions: vec![Position { x: 12, y: 11 }],
+                    terrain_type: "Mountain".to_string(),
+                    variant_type: "mountain1".to_string(),
+                },
+                // mountain3 - vertical
+                StaticTerrain {
+                    name: "高峰".to_string(),
+                    core_position: Position { x: 13, y: 11 },
+                    positions: vec![Position { x: 13, y: 11 }, Position { x: 13, y: 12 }],
+                    terrain_type: "Mountain".to_string(),
+                    variant_type: "mountain3".to_string(),
+                },
+                // mountain2 - single
+                StaticTerrain {
+                    name: "远峰".to_string(),
+                    core_position: Position { x: 15, y: 10 },
+                    positions: vec![Position { x: 15, y: 10 }],
+                    terrain_type: "Mountain".to_string(),
+                    variant_type: "mountain2".to_string(),
+                },
+                // mountain1 - single
+                StaticTerrain {
+                    name: "北峰".to_string(),
+                    core_position: Position { x: 14, y: 7 },
+                    positions: vec![Position { x: 14, y: 7 }],
+                    terrain_type: "Mountain".to_string(),
+                    variant_type: "mountain1".to_string(),
+                },
+                // mountain2 - single
+                StaticTerrain {
+                    name: "陡峰".to_string(),
+                    core_position: Position { x: 14, y: 6 },
+                    positions: vec![Position { x: 14, y: 6 }],
+                    terrain_type: "Mountain".to_string(),
+                    variant_type: "mountain2".to_string(),
+                },
+                // mountain2 - single
+                StaticTerrain {
+                    name: "东峰".to_string(),
+                    core_position: Position { x: 15, y: 7 },
+                    positions: vec![Position { x: 15, y: 7 }],
+                    terrain_type: "Mountain".to_string(),
+                    variant_type: "mountain2".to_string(),
+                },
+                // mountain3 - vertical
+                StaticTerrain {
+                    name: "双峰岭".to_string(),
+                    core_position: Position { x: 15, y: 8 },
+                    positions: vec![Position { x: 15, y: 8 }, Position { x: 15, y: 9 }],
+                    terrain_type: "Mountain".to_string(),
+                    variant_type: "mountain3".to_string(),
+                },
+                // mountain3 - vertical
+                StaticTerrain {
+                    name: "连峰".to_string(),
+                    core_position: Position { x: 16, y: 8 },
+                    positions: vec![Position { x: 16, y: 8 }, Position { x: 16, y: 9 }],
+                    terrain_type: "Mountain".to_string(),
+                    variant_type: "mountain3".to_string(),
                 },
             ],
         }

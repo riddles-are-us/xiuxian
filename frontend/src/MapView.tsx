@@ -33,8 +33,8 @@ const MapView: React.FC<MapViewProps> = ({
 
   // 检查元素是否占据某个位置（用于渲染和碰撞检测）
   const elementOccupiesPosition = (element: MapElement, x: number, y: number): boolean => {
-    if (element.positions && element.positions.length > 0) {
-      return element.positions.some(pos => pos.x === x && pos.y === y);
+    if (element.details.positions && element.details.positions.length > 0) {
+      return element.details.positions.some(pos => pos.x === x && pos.y === y);
     }
     // Fallback to core position if positions array not available
     return element.position.x === x && element.position.y === y;
@@ -485,7 +485,7 @@ const MapView: React.FC<MapViewProps> = ({
                     <>
                       <span className="tile-icon">{getElementIcon(element.element_type, element.details)}</span>
                       {/* Show core position indicator for multi-tile elements */}
-                      {isCorePosition && element.positions && element.positions.length > 1 && (
+                      {isCorePosition && element.details.positions && element.details.positions.length > 1 && (
                         <span style={{
                           position: 'absolute',
                           top: '2px',

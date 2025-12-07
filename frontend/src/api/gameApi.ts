@@ -108,26 +108,33 @@ export interface MapElement {
     x: number;
     y: number;
   };
-  positions?: Array<{  // All occupied positions - for collision/rendering (optional for backwards compatibility)
-    x: number;
-    y: number;
-  }>;
   details: {
     type: string;
+    // Village fields
     population?: number;
     prosperity?: number;
-    under_attack?: AttackInfo;  // 受攻击信息（村庄、势力、秘境）
+    // Faction fields
     power_level?: number;
     relationship?: number;
+    // DangerousLocation fields
     danger_level?: number;
+    // SecretRealm fields
     realm_type?: string;
     difficulty?: number;
+    // Monster fields
     level?: number;
     is_demon?: boolean;
-    growth_rate?: number;  // 成长速率 (每回合升级概率)
+    growth_rate?: number;
     invading_location?: string;  // 妖魔正在入侵的地点ID
+    // Terrain fields
     terrain_type?: string;  // 地形类型：Mountain, Water, Forest, Plain
     variant_type?: string;  // 地形变体：mountain, river, lake, forest, etc.
+    // Common fields
+    positions?: Array<{  // All occupied positions - for collision/rendering
+      x: number;
+      y: number;
+    }>;
+    under_attack?: AttackInfo;  // 受攻击信息（村庄、势力、秘境）
   };
 }
 

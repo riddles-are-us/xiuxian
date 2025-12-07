@@ -369,7 +369,6 @@ pub struct MapElementDto {
     pub element_type: String,
     pub name: String,
     pub position: PositionDto,  // Core position for interaction
-    pub positions: Vec<PositionDto>,  // All occupied positions for collision/rendering
     pub details: MapElementDetails,
 }
 
@@ -382,12 +381,43 @@ pub struct PositionDto {
 #[derive(Debug, Serialize, Clone)]
 #[serde(tag = "type")]
 pub enum MapElementDetails {
-    Village { population: u32, prosperity: u32, under_attack: Option<AttackInfo> },
-    Faction { power_level: u32, relationship: i32, under_attack: Option<AttackInfo> },
-    DangerousLocation { danger_level: u32 },
-    SecretRealm { realm_type: String, difficulty: u32, under_attack: Option<AttackInfo> },
-    Monster { level: u32, is_demon: bool, growth_rate: f64, invading_location: Option<String> },
-    Terrain { terrain_type: String, variant_type: String },
+    Village {
+        population: u32,
+        prosperity: u32,
+        level: u32,
+        positions: Vec<PositionDto>,
+        under_attack: Option<AttackInfo>
+    },
+    Faction {
+        power_level: u32,
+        relationship: i32,
+        level: u32,
+        positions: Vec<PositionDto>,
+        under_attack: Option<AttackInfo>
+    },
+    DangerousLocation {
+        danger_level: u32,
+        level: u32,
+        positions: Vec<PositionDto>
+    },
+    SecretRealm {
+        realm_type: String,
+        difficulty: u32,
+        level: u32,
+        positions: Vec<PositionDto>,
+        under_attack: Option<AttackInfo>
+    },
+    Monster {
+        level: u32,
+        is_demon: bool,
+        growth_rate: f64,
+        invading_location: Option<String>
+    },
+    Terrain {
+        terrain_type: String,
+        variant_type: String,
+        positions: Vec<PositionDto>
+    },
 }
 
 /// 攻击信息
