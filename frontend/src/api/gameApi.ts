@@ -202,6 +202,22 @@ export interface BuildBuildingResponse {
   effects_count: number;
 }
 
+export interface MoveDiscipleResponse {
+  success: boolean;
+  message: string;
+  disciple_id: number;
+  disciple_name: string;
+  old_position: {
+    x: number;
+    y: number;
+  };
+  new_position: {
+    x: number;
+    y: number;
+  };
+  moves_remaining: number;
+}
+
 export const gameApi = {
   getVersion: async (): Promise<VersionInfo> => {
     const response = await axios.get(`${API_BASE}/version`);
@@ -316,7 +332,7 @@ export const gameApi = {
     return response.data.data;
   },
 
-  moveDisciple: async (gameId: string, discipleId: number, x: number, y: number) => {
+  moveDisciple: async (gameId: string, discipleId: number, x: number, y: number): Promise<MoveDiscipleResponse> => {
     const response = await axios.post(`${API_BASE}/game/${gameId}/disciples/${discipleId}/move`, {
       x,
       y

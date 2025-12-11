@@ -546,4 +546,5 @@ pub struct MoveDiscipleResponse {
     pub disciple_name: String,
     pub old_position: PositionDto,
     pub new_position: PositionDto,
+    pub moves_remaining: u32,
 }

@@ -576,6 +576,7 @@ async fn move_disciple(
                 disciple_name: disciple.name.clone(),
                 old_position,
                 new_position: new_position_dto,
+                moves_remaining: disciple.moves_remaining,
             };
 
             (StatusCode::OK, Json(ApiResponse::ok(response)))

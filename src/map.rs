@@ -1504,16 +1504,12 @@ impl GameMap {
             return false;
         }
 
-        // 检查是否被任何元素占据（地形、建筑等都是不可通行的）
+        // 只有地形是不可通行的障碍物
+        // 建筑（村庄、势力、险地、秘境）和妖魔都可以通行
         for positioned in &self.elements {
             if positioned.occupies_position(pos) {
-                // 地形是完全不可通行的
+                // 只有地形是完全不可通行的
                 if matches!(positioned.element, MapElement::Terrain(_)) {
-                    return false;
-                }
-                // 其他建筑也不可通行（村庄、势力、险地、秘境）
-                // 但妖魔不算障碍物（可以和妖魔在同一位置战斗）
-                if !matches!(positioned.element, MapElement::Monster(_)) {
                     return false;
                 }
             }
