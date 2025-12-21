@@ -54,14 +54,15 @@ pub enum ModifierApplication {
 /// Modifier来源
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum ModifierSource {
-    Talent,      // 天赋
-    Equipment,   // 装备
-    Buff,        // 增益状态
-    Debuff,      // 减益状态
-    Pill,        // 丹药效果
-    Heritage,    // 传承
-    Environment, // 环境影响
-    System,      // 系统效果
+    Talent,       // 天赋
+    Equipment,    // 装备
+    Buff,         // 增益状态
+    Debuff,       // 减益状态
+    Pill,         // 丹药效果
+    Heritage,     // 传承
+    Environment,  // 环境影响
+    System,       // 系统效果
+    Relationship, // 关系加成
 }
 
 /// Modifier条件 - 用于判断modifier是否对某个弟子生效
@@ -94,6 +95,12 @@ pub enum ModifierCondition {
     HasTalent(TalentType),
     TalentLevelGreaterThan(TalentType, u32),
     TalentLevelEquals(TalentType, u32),
+
+    // 关系相关
+    HasDaoCompanion,                    // 有道侣
+    HasMaster,                          // 有师父
+    HasDisciples,                       // 有徒弟
+    RelationLevelGreaterOrEqual(usize, crate::relationship::RelationDimension, crate::relationship::RelationLevel),
 
     // 组合条件
     And(Vec<ModifierCondition>),
@@ -175,6 +182,22 @@ impl ModifierCondition {
                 disciple.talents.iter()
                     .find(|t| &t.talent_type == talent_type)
                     .map(|t| t.level == *level)
+                    .unwrap_or(false)
+            }
+
+            // 关系相关
+            ModifierCondition::HasDaoCompanion => {
+                disciple.has_dao_companion()
+            }
+            ModifierCondition::HasMaster => {
+                disciple.get_master_id().is_some()
+            }
+            ModifierCondition::HasDisciples => {
+                !disciple.get_disciple_ids().is_empty()
+            }
+            ModifierCondition::RelationLevelGreaterOrEqual(target_id, dimension, level) => {
+                disciple.get_relationship(*target_id)
+                    .map(|rel| rel.scores.get_level(*dimension) >= *level)
                     .unwrap_or(false)
             }
 
@@ -454,7 +477,8 @@ mod tests {
             ModifierSource::Buff,
         );
 
-        assert_eq!(modifier.apply(50.0), 60.0);
+        let result = modifier.apply(50.0);
+        assert!((result - 60.0).abs() < 0.001, "Expected ~60.0, got {}", result);
     }
 
     #[test]

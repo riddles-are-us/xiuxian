@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use crate::disciple::{Disciple, Talent, Heritage};
 use crate::sect::Sect;
+use crate::relationship::{Relationship, RelationDimension, RelationLevel, RelationScores};
 
 /// API响应包装
 #[derive(Debug, Serialize)]
@@ -82,11 +83,49 @@ impl From<&Sect> for SectDto {
     }
 }
 
-/// 道侣DTO
+/// 关系分数DTO
 #[derive(Debug, Serialize, Clone)]
-pub struct DaoCompanionDto {
-    pub companion_id: usize,
-    pub affinity: u32,
+pub struct RelationScoresDto {
+    pub romance: u32,       // 男女情感 0-100
+    pub mentorship: u32,    // 师徒关系 0-100
+    pub comrade: u32,       // 战友关系 0-100
+    pub understanding: u32, // 认知程度 0-100
+    pub fateful_bond: u32,  // 机缘关系 0-100
+}
+
+impl From<&RelationScores> for RelationScoresDto {
+    fn from(scores: &RelationScores) -> Self {
+        Self {
+            romance: scores.romance,
+            mentorship: scores.mentorship,
+            comrade: scores.comrade,
+            understanding: scores.understanding,
+            fateful_bond: scores.fateful_bond,
+        }
+    }
+}
+
+/// 关系DTO
+#[derive(Debug, Serialize, Clone)]
+pub struct RelationshipDto {
+    pub target_id: usize,
+    pub target_name: String,
+    pub scores: RelationScoresDto,
+    pub established_year: u32,
+    pub is_dao_companion: bool,
+    pub is_master: bool,
+    pub is_disciple: bool,
+    pub primary_relation: String,
+    pub highest_level: String,
+}
+
+/// 关系摘要DTO（用于弟子列表）
+#[derive(Debug, Serialize, Clone)]
+pub struct RelationshipSummaryDto {
+    pub dao_companion_id: Option<usize>,
+    pub master_id: Option<usize>,
+    pub disciple_ids: Vec<usize>,
+    pub total_relationships: usize,
 }
 
 /// 弟子DTO
@@ -103,7 +142,7 @@ pub struct DiscipleDto {
     pub constitution: u32,   // 体魄 0-100
     pub talents: Vec<TalentDto>,
     pub heritage: Option<HeritageDto>,
-    pub dao_companion: Option<DaoCompanionDto>,
+    pub relationship_summary: RelationshipSummaryDto,  // 关系摘要
     pub children_count: usize,
     pub current_task_info: Option<CurrentTaskInfo>,
     pub position: PositionDto,  // 弟子在地图上的位置
@@ -147,10 +186,12 @@ impl From<&Disciple> for DiscipleDto {
             constitution: disciple.constitution,
             talents: disciple.talents.iter().map(|t| t.into()).collect(),
             heritage: disciple.heritage.as_ref().map(|h| h.into()),
-            dao_companion: disciple.dao_companion.as_ref().map(|dc| DaoCompanionDto {
-                companion_id: dc.companion_id,
-                affinity: dc.affinity,
-            }),
+            relationship_summary: RelationshipSummaryDto {
+                dao_companion_id: disciple.get_dao_companion_id(),
+                master_id: disciple.get_master_id(),
+                disciple_ids: disciple.get_disciple_ids(),
+                total_relationships: disciple.relationships.len(),
+            },
             children_count: disciple.children.len(),
             current_task_info: None,  // 将在web_server中填充
             movement_range: disciple.cultivation.current_level.movement_range(),
@@ -219,7 +260,8 @@ pub struct TaskDto {
     pub task_type: String,
     pub rewards: TaskRewards,
     pub dao_heart_impact: i32,
-    pub assigned_to: Option<usize>,
+    pub assigned_to: Vec<usize>,  // 已分配的弟子ID列表（支持多人）
+    pub max_participants: u32,    // 最大参与人数
     pub duration: u32,           // 任务执行时间（回合数）
     pub progress: u32,            // 当前执行进度（回合数）
     pub expiry_turns: u32,        // 失效时间
@@ -385,7 +427,7 @@ pub enum MapElementDetails {
     Faction { power_level: u32, relationship: i32, under_attack: Option<AttackInfo> },
     DangerousLocation { danger_level: u32 },
     SecretRealm { realm_type: String, difficulty: u32, under_attack: Option<AttackInfo> },
-    Monster { level: u32, is_demon: bool, growth_rate: f64, invading_location: Option<String> },
+    Monster { monster_id: String, level: u32, is_demon: bool, growth_rate: f64, invading_location: Option<String> },
     Terrain { terrain_type: String },
 }
 
@@ -515,4 +557,86 @@ pub struct MoveDiscipleResponse {
     pub disciple_name: String,
     pub old_position: PositionDto,
     pub new_position: PositionDto,
+}
+
+// === 关系系统相关 ===
+
+/// 弟子关系列表响应
+#[derive(Debug, Serialize)]
+pub struct DiscipleRelationshipsResponse {
+    pub disciple_id: usize,
+    pub disciple_name: String,
+    pub relationships: Vec<RelationshipDto>,
+}
+
+/// 设置师徒关系请求
+#[derive(Debug, Deserialize)]
+pub struct SetMentorshipRequest {
+    pub master_id: usize,
+    pub disciple_id: usize,
+}
+
+/// 设置师徒关系响应
+#[derive(Debug, Serialize)]
+pub struct SetMentorshipResponse {
+    pub success: bool,
+    pub message: String,
+    pub master_name: String,
+    pub disciple_name: String,
+}
+
+/// 设置道侣关系请求
+#[derive(Debug, Deserialize)]
+pub struct SetDaoCompanionRequest {
+    pub disciple1_id: usize,
+    pub disciple2_id: usize,
+}
+
+/// 设置道侣关系响应
+#[derive(Debug, Serialize)]
+pub struct SetDaoCompanionResponse {
+    pub success: bool,
+    pub message: String,
+    pub disciple1_name: String,
+    pub disciple2_name: String,
+}
+
+/// 更新关系分数请求
+#[derive(Debug, Deserialize)]
+pub struct UpdateRelationshipRequest {
+    pub from_id: usize,
+    pub to_id: usize,
+    pub dimension: String,  // Romance, Mentorship, Comrade, Understanding, FatefulBond
+    pub delta: i32,
+}
+
+/// 更新关系分数响应
+#[derive(Debug, Serialize)]
+pub struct UpdateRelationshipResponse {
+    pub success: bool,
+    pub message: String,
+    pub from_name: String,
+    pub to_name: String,
+    pub dimension: String,
+    pub old_score: u32,
+    pub new_score: u32,
+    pub level_up: Option<String>,
+}
+
+/// 所有关系响应
+#[derive(Debug, Serialize)]
+pub struct AllRelationshipsResponse {
+    pub total_relationships: usize,
+    pub relationships: Vec<RelationshipPairDto>,
+}
+
+/// 关系对DTO
+#[derive(Debug, Serialize, Clone)]
+pub struct RelationshipPairDto {
+    pub from_id: usize,
+    pub from_name: String,
+    pub to_id: usize,
+    pub to_name: String,
+    pub scores: RelationScoresDto,
+    pub primary_relation: String,
 }

@@ -14,6 +14,36 @@ export interface GameInfo {
   state: string;
 }
 
+// 关系分数
+export interface RelationScores {
+  romance: number;       // 男女情感 0-100
+  mentorship: number;    // 师徒关系 0-100
+  comrade: number;       // 战友关系 0-100
+  understanding: number; // 认知程度 0-100
+  fateful_bond: number;  // 机缘关系 0-100
+}
+
+// 关系详情
+export interface Relationship {
+  target_id: number;
+  target_name: string;
+  scores: RelationScores;
+  established_year: number;
+  is_dao_companion: boolean;
+  is_master: boolean;
+  is_disciple: boolean;
+  primary_relation: string;
+  highest_level: string;
+}
+
+// 关系摘要
+export interface RelationshipSummary {
+  dao_companion_id: number | null;
+  master_id: number | null;
+  disciple_ids: number[];
+  total_relationships: number;
+}
+
 export interface Disciple {
   id: number;
   name: string;
@@ -42,10 +72,7 @@ export interface Disciple {
     name: string;
     level: string;
   } | null;
-  dao_companion: {
-    companion_id: number;
-    affinity: number;
-  } | null;
+  relationship_summary: RelationshipSummary;  // 关系摘要
   children_count: number;
   current_task_info: {
     task_id: number;
@@ -71,7 +98,8 @@ export interface Task {
     reputation: number;
   };
   dao_heart_impact: number;
-  assigned_to: number | null;
+  assigned_to: number[];      // 已分配的弟子ID列表（支持多人）
+  max_participants: number;   // 最大参与人数
   duration: number;
   progress: number;
   expiry_turns: number;
@@ -118,6 +146,7 @@ export interface MapElement {
     danger_level?: number;
     realm_type?: string;
     difficulty?: number;
+    monster_id?: string;  // 怪物唯一ID（格式：monster_X）
     level?: number;
     is_demon?: boolean;
     growth_rate?: number;  // 成长速率 (每回合升级概率)
@@ -310,5 +339,11 @@ export const gameApi = {
       y
     });
     return response.data.data;
+  },
+
+  // 获取弟子的所有关系
+  getDiscipleRelationships: async (gameId: string, discipleId: number): Promise<Relationship[]> => {
+    const response = await axios.get(`${API_BASE}/game/${gameId}/disciples/${discipleId}/relationships`);
+    return response.data.data.relationships;
   }
 };

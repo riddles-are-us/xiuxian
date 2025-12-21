@@ -1,6 +1,7 @@
 use crate::disciple::{Disciple, DiscipleType, Talent, TalentType};
 use crate::sect::Sect;
 use crate::task::Task;
+use crate::relationship::{RelationDimension, RelationLevel};
 use rand::Rng;
 
 /// 游戏事件
@@ -16,6 +17,16 @@ pub enum GameEvent {
     MapUpdate,                     // 地图更新
     ChildBorn(usize, usize),       // 子女出生 (父母ID)
     ChildComeOfAge(usize),         // 子女成年
+
+    // 关系事件
+    RelationshipLevelUp {          // 关系等级提升
+        disciple_id: usize,
+        target_id: usize,
+        dimension: RelationDimension,
+        new_level: RelationLevel,
+    },
+    BecameDaoCompanion(usize, usize),     // 成为道侣
+    BecameMasterDisciple(usize, usize),   // 建立师徒关系 (师父ID, 徒弟ID)
 }
 
 /// 任务结果
@@ -187,15 +198,15 @@ impl RecruitmentSystem {
     pub fn try_recruit(&mut self, sect: &Sect) -> Option<Disciple> {
         let mut rng = rand::thread_rng();
 
-        // 根据声望决定招募概率
+        // 根据声望决定招募概率（低概率，使招募成为稀有事件）
         let recruit_chance = if sect.reputation > 100 {
-            0.5
+            0.15  // 15% - 约每7回合一次
         } else if sect.reputation > 50 {
-            0.3
+            0.10  // 10% - 约每10回合一次
         } else if sect.reputation > 0 {
-            0.2
+            0.05  // 5% - 约每20回合一次
         } else {
-            0.1
+            0.02  // 2% - 约每50回合一次
         };
 
         if rng.gen_bool(recruit_chance) {

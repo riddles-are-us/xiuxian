@@ -3,6 +3,8 @@ use crate::cultivation::CultivationLevel;
 use crate::pill::PillInventory;
 use crate::modifier::ConditionalModifier;
 use crate::building::BuildingTree;
+use crate::relationship::{Relationship, RelationDimension, RelationLevel, RelationGrowth};
+use crate::task::TaskType;
 
 /// 宗门
 #[derive(Debug)]
@@ -279,6 +281,191 @@ impl Sect {
             year: self.year,
             cultivation_distribution,
         }
+    }
+
+    // === 关系系统方法 ===
+
+    /// 设置师徒关系
+    pub fn set_mentorship(&mut self, master_id: usize, disciple_id: usize) -> Result<(), String> {
+        // 验证两个弟子都存在
+        if !self.disciples.iter().any(|d| d.id == master_id && d.is_alive()) {
+            return Err("师父不存在或已死亡".to_string());
+        }
+        if !self.disciples.iter().any(|d| d.id == disciple_id && d.is_alive()) {
+            return Err("徒弟不存在或已死亡".to_string());
+        }
+        if master_id == disciple_id {
+            return Err("不能自己拜自己为师".to_string());
+        }
+
+        let year = self.year;
+
+        // 为徒弟添加师父关系
+        if let Some(disciple) = self.disciples.iter_mut().find(|d| d.id == disciple_id) {
+            // 检查是否已有师父
+            if disciple.get_master_id().is_some() {
+                return Err("已有师父，不能再拜师".to_string());
+            }
+            let rel = Relationship::new_as_disciple_of(master_id, year);
+            disciple.relationships.push(rel);
+        }
+
+        // 为师父添加徒弟关系
+        if let Some(master) = self.disciples.iter_mut().find(|d| d.id == master_id) {
+            let rel = Relationship::new_as_master_of(disciple_id, year);
+            master.relationships.push(rel);
+        }
+
+        Ok(())
+    }
+
+    /// 设置道侣关系（需要双方情感 >= 80）
+    pub fn set_dao_companion(&mut self, id1: usize, id2: usize) -> Result<(), String> {
+        // 验证两个弟子都存在
+        if !self.disciples.iter().any(|d| d.id == id1 && d.is_alive()) {
+            return Err("第一位弟子不存在或已死亡".to_string());
+        }
+        if !self.disciples.iter().any(|d| d.id == id2 && d.is_alive()) {
+            return Err("第二位弟子不存在或已死亡".to_string());
+        }
+        if id1 == id2 {
+            return Err("不能与自己结为道侣".to_string());
+        }
+
+        // 检查双方情感分数
+        let d1_romance = self.disciples.iter()
+            .find(|d| d.id == id1)
+            .and_then(|d| d.get_relationship(id2))
+            .map(|r| r.scores.romance)
+            .unwrap_or(0);
+
+        let d2_romance = self.disciples.iter()
+            .find(|d| d.id == id2)
+            .and_then(|d| d.get_relationship(id1))
+            .map(|r| r.scores.romance)
+            .unwrap_or(0);
+
+        if d1_romance < 80 || d2_romance < 80 {
+            return Err(format!(
+                "双方情感分数不足（需要>=80），当前: {} -> {} = {}, {} -> {} = {}",
+                id1, id2, d1_romance, id2, id1, d2_romance
+            ));
+        }
+
+        // 检查双方是否已有道侣
+        if self.disciples.iter().find(|d| d.id == id1).map(|d| d.has_dao_companion()).unwrap_or(false) {
+            return Err("第一位弟子已有道侣".to_string());
+        }
+        if self.disciples.iter().find(|d| d.id == id2).map(|d| d.has_dao_companion()).unwrap_or(false) {
+            return Err("第二位弟子已有道侣".to_string());
+        }
+
+        let year = self.year;
+
+        // 设置双方的道侣标记
+        if let Some(d1) = self.disciples.iter_mut().find(|d| d.id == id1) {
+            let rel = d1.get_or_create_relationship(id2, year);
+            rel.is_dao_companion = true;
+        }
+        if let Some(d2) = self.disciples.iter_mut().find(|d| d.id == id2) {
+            let rel = d2.get_or_create_relationship(id1, year);
+            rel.is_dao_companion = true;
+        }
+
+        Ok(())
+    }
+
+    /// 更新关系分数
+    pub fn update_relationship_score(
+        &mut self,
+        from_id: usize,
+        to_id: usize,
+        dimension: RelationDimension,
+        delta: i32,
+    ) -> Result<Option<RelationLevel>, String> {
+        if !self.disciples.iter().any(|d| d.id == from_id && d.is_alive()) {
+            return Err("来源弟子不存在或已死亡".to_string());
+        }
+        if !self.disciples.iter().any(|d| d.id == to_id && d.is_alive()) {
+            return Err("目标弟子不存在或已死亡".to_string());
+        }
+
+        let year = self.year;
+
+        if let Some(disciple) = self.disciples.iter_mut().find(|d| d.id == from_id) {
+            let rel = disciple.get_or_create_relationship(to_id, year);
+            let (_, level_up) = rel.scores.add(dimension, delta);
+            Ok(level_up)
+        } else {
+            Err("弟子不存在".to_string())
+        }
+    }
+
+    /// 一起完成任务时更新关系
+    pub fn update_relationship_from_task(
+        &mut self,
+        disciple_ids: &[usize],
+        task_type: &TaskType,
+    ) -> Vec<(usize, usize, RelationDimension, RelationLevel)> {
+        let year = self.year;
+        let growth = RelationGrowth::from_task_type(task_type);
+        let mut level_ups = Vec::new();
+
+        // 为所有参与任务的弟子之间更新关系
+        for i in 0..disciple_ids.len() {
+            for j in 0..disciple_ids.len() {
+                if i == j {
+                    continue;
+                }
+
+                let from_id = disciple_ids[i];
+                let to_id = disciple_ids[j];
+
+                if let Some(disciple) = self.disciples.iter_mut().find(|d| d.id == from_id) {
+                    let rel = disciple.get_or_create_relationship(to_id, year);
+                    let ups = growth.apply_to(&mut rel.scores);
+                    for (dim, level) in ups {
+                        level_ups.push((from_id, to_id, dim, level));
+                    }
+                }
+            }
+        }
+
+        level_ups
+    }
+
+    /// 获取两个弟子之间的关系描述
+    pub fn get_relationship_description(&self, from_id: usize, to_id: usize) -> Option<String> {
+        let from = self.disciples.iter().find(|d| d.id == from_id)?;
+        let to = self.disciples.iter().find(|d| d.id == to_id)?;
+        let rel = from.get_relationship(to_id)?;
+
+        Some(format!(
+            "{} 与 {} 的关系: {} (情感:{}, 师徒:{}, 战友:{}, 认知:{}, 机缘:{})",
+            from.name,
+            to.name,
+            rel.get_primary_relation(),
+            rel.scores.romance,
+            rel.scores.mentorship,
+            rel.scores.comrade,
+            rel.scores.understanding,
+            rel.scores.fateful_bond
+        ))
+    }
+
+    /// 获取弟子的所有关系
+    pub fn get_disciple_relationships(&self, disciple_id: usize) -> Vec<(usize, String, &Relationship)> {
+        let disciple = match self.disciples.iter().find(|d| d.id == disciple_id) {
+            Some(d) => d,
+            None => return Vec::new(),
+        };
+
+        disciple.relationships.iter()
+            .filter_map(|rel| {
+                let target = self.disciples.iter().find(|d| d.id == rel.target_id)?;
+                Some((rel.target_id, target.name.clone(), rel))
+            })
+            .collect()
     }
 }
 

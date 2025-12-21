@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { MapData, MapElement, Disciple, Task, GameInfo, gameApi } from './api/gameApi';
+import { MapData, MapElement, Disciple, Task, GameInfo, gameApi, Relationship } from './api/gameApi';
 import MapView from './MapView';
 import { getElementIcon, renderElementDetails } from './MapElementDetails';
 import BuildingTree from './BuildingTree';
@@ -11,11 +11,13 @@ interface FullscreenMapViewProps {
   tasks: Task[];
   gameInfo: GameInfo;
   gameId: string;
-  onDiscipleMoved: () => void;
+  onDiscipleMoved: (movedDiscipleId: number) => Promise<Disciple[]>;  // 返回刷新后的弟子列表
   onTaskAssigned: () => void;
   onAutoAssign: () => void;
   onNextTurn: () => void;
   onResetGame: () => void;
+  mapPosition: { x: number; y: number };
+  onMapPositionChange: (pos: { x: number; y: number }) => void;
 }
 
 type PanelType = 'disciples' | 'tasks' | 'mapinfo' | 'buildings' | null;
@@ -30,7 +32,9 @@ const FullscreenMapView: React.FC<FullscreenMapViewProps> = ({
   onTaskAssigned,
   onAutoAssign,
   onNextTurn,
-  onResetGame
+  onResetGame,
+  mapPosition,
+  onMapPositionChange
 }) => {
   const [activePanel, setActivePanel] = useState<PanelType>(null);
   const [panelTab, setPanelTab] = useState<'disciples' | 'tasks' | 'mapinfo' | 'buildings'>('disciples');
@@ -39,12 +43,36 @@ const FullscreenMapView: React.FC<FullscreenMapViewProps> = ({
   const [selectedElement, setSelectedElement] = useState<MapElement | null>(null);
   const [selectedMapDisciple, setSelectedMapDisciple] = useState<Disciple | null>(null);
   const [moveError, setMoveError] = useState<string | null>(null);
+  const [discipleRelationships, setDiscipleRelationships] = useState<Relationship[]>([]);
+  const [showRelationships, setShowRelationships] = useState(false);
+
+  // 当 disciples 数据更新时，同步更新选中的弟子状态
+  useEffect(() => {
+    if (selectedMapDisciple) {
+      const updatedDisciple = disciples.find(d => d.id === selectedMapDisciple.id);
+      if (updatedDisciple) {
+        setSelectedMapDisciple(updatedDisciple);
+      }
+    }
+  }, [disciples]);
+
+  // 当选中弟子变化时，加载其关系数据
+  useEffect(() => {
+    if (selectedMapDisciple) {
+      gameApi.getDiscipleRelationships(gameId, selectedMapDisciple.id)
+        .then(setDiscipleRelationships)
+        .catch(() => setDiscipleRelationships([]));
+    } else {
+      setDiscipleRelationships([]);
+      setShowRelationships(false);
+    }
+  }, [selectedMapDisciple, gameId]);
 
   // 地图拖拽平移状态 - 使用 transform 而不是 scroll
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
-  const [mapPosition, setMapPosition] = useState({ x: 0, y: 0 }); // 地图的当前位置
+  // mapPosition 现在由父组件管理，不再使用本地 state
   const savedMapPosition = useRef({ x: 0, y: 0 }); // 用于拖拽开始时保存位置
 
   const togglePanel = (panel: PanelType) => {
@@ -78,7 +106,7 @@ const FullscreenMapView: React.FC<FullscreenMapViewProps> = ({
       const deltaX = e.clientX - panStart.x;
       const deltaY = e.clientY - panStart.y;
 
-      setMapPosition({
+      onMapPositionChange({
         x: savedMapPosition.current.x + deltaX,
         y: savedMapPosition.current.y + deltaY
       });
@@ -99,7 +127,7 @@ const FullscreenMapView: React.FC<FullscreenMapViewProps> = ({
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isPanning, panStart]);
+  }, [isPanning, panStart, onMapPositionChange]);
 
   const assignTask = async (taskId: number, discipleId: number) => {
     try {
@@ -137,10 +165,16 @@ const FullscreenMapView: React.FC<FullscreenMapViewProps> = ({
     }
   };
 
-  // 处理弟子移动 - 使用 transform 后不需要保存/恢复位置
-  const handleDiscipleMoved = async () => {
-    await onDiscipleMoved();
-    // transform 方式下，mapPosition 状态会自动保持，无需额外处理
+  // 处理弟子移动 - 刷新数据并重新选中弟子
+  const handleDiscipleMoved = async (movedDiscipleId: number) => {
+    const updatedDisciples = await onDiscipleMoved(movedDiscipleId);
+    // 从刷新后的数据中找到移动的弟子并重新选中
+    const movedDisciple = updatedDisciples.find(d => d.id === movedDiscipleId);
+    if (movedDisciple) {
+      setSelectedMapDisciple(movedDisciple);
+      setActivePanel('mapinfo');
+      setPanelTab('mapinfo');
+    }
   };
 
   // 处理任务点击 - 聚焦到任务位置（使用 transform）
@@ -179,7 +213,7 @@ const FullscreenMapView: React.FC<FullscreenMapViewProps> = ({
     console.log('Focusing on task:', task.name, 'at position:', { x, y });
     console.log('Setting map position to:', { x: newX, y: newY });
 
-    setMapPosition({ x: newX, y: newY });
+    onMapPositionChange({ x: newX, y: newY });
 
     // 选中该位置的元素并打开地图信息面板
     const element = mapData.elements.find(
@@ -367,7 +401,7 @@ const FullscreenMapView: React.FC<FullscreenMapViewProps> = ({
             {panelTab === 'tasks' && (
               <div>
                 {tasks.map(task => (
-                  <div key={task.id} className={`task-list-item ${task.assigned_to !== null ? 'assigned' : ''}`}>
+                  <div key={task.id} className={`task-list-item ${task.assigned_to.length > 0 ? 'assigned' : ''}`}>
                     <div
                       className="task-name"
                       onClick={() => handleTaskClick(task)}
@@ -385,8 +419,13 @@ const FullscreenMapView: React.FC<FullscreenMapViewProps> = ({
                       }}
                     >
                       {task.name}
-                      {task.assigned_to !== null && <span style={{marginLeft: '0.5rem', fontSize: '0.9rem'}}>✅</span>}
+                      {task.assigned_to.length > 0 && <span style={{marginLeft: '0.5rem', fontSize: '0.9rem'}}>✅</span>}
                       {task.position && <span style={{marginLeft: '0.5rem', fontSize: '0.8rem', opacity: 0.7}}>🗺️</span>}
+                      {task.max_participants > 1 && (
+                        <span style={{marginLeft: '0.5rem', fontSize: '0.75rem', color: '#667eea'}}>
+                          👥{task.assigned_to.length}/{task.max_participants}
+                        </span>
+                      )}
                     </div>
                     <div className="task-info">
                       <div>类型: {task.task_type}</div>
@@ -396,7 +435,7 @@ const FullscreenMapView: React.FC<FullscreenMapViewProps> = ({
                       {task.position && (
                         <div>位置: ({task.position.x}, {task.position.y})</div>
                       )}
-                      {task.assigned_to !== null ? (
+                      {task.assigned_to.length > 0 ? (
                         <div style={{marginTop: '0.5rem'}}>
                           <button
                             onClick={() => unassignTask(task.id)}
@@ -410,11 +449,47 @@ const FullscreenMapView: React.FC<FullscreenMapViewProps> = ({
                               fontSize: '0.85rem'
                             }}
                           >
-                            取消分配
+                            取消全部
                           </button>
                           <span style={{marginLeft: '0.5rem', color: '#48bb78'}}>
-                            分配给: {disciples.find(d => d.id === task.assigned_to)?.name}
+                            已分配: {task.assigned_to.map(id => disciples.find(d => d.id === id)?.name).filter(Boolean).join('、')}
                           </span>
+                          {/* 如果还能添加更多弟子 */}
+                          {task.assigned_to.length < task.max_participants && (() => {
+                            const availableDisciples = disciples
+                              .filter(d => !d.current_task_info &&
+                                          task.suitable_disciples.free.includes(d.id) &&
+                                          !task.assigned_to.includes(d.id));
+                            if (availableDisciples.length === 0) return null;
+                            return (
+                              <div style={{marginTop: '0.5rem'}}>
+                                <select
+                                  onChange={(e) => {
+                                    if (e.target.value) {
+                                      assignTask(task.id, parseInt(e.target.value));
+                                      e.target.value = '';
+                                    }
+                                  }}
+                                  style={{
+                                    padding: '0.3rem',
+                                    background: 'rgba(102, 126, 234, 0.2)',
+                                    color: 'white',
+                                    border: '1px solid #667eea',
+                                    borderRadius: '4px',
+                                    cursor: 'pointer',
+                                    fontSize: '0.8rem'
+                                  }}
+                                >
+                                  <option value="">➕ 添加弟子...</option>
+                                  {availableDisciples.map(d => (
+                                    <option key={d.id} value={d.id} style={{background: '#2a2a40'}}>
+                                      {d.name} ({d.cultivation.level})
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            );
+                          })()}
                         </div>
                       ) : (
                         <div style={{marginTop: '0.5rem'}}>
@@ -493,6 +568,75 @@ const FullscreenMapView: React.FC<FullscreenMapViewProps> = ({
                         </span>
                       </div>
                       {renderElementDetails(selectedElement)}
+
+                      {/* 显示该位置的可用任务 */}
+                      {(() => {
+                        const tasksAtPosition = tasks.filter(t => {
+                          // 按位置匹配
+                          if (t.position &&
+                              t.position.x === selectedElement.position.x &&
+                              t.position.y === selectedElement.position.y) {
+                            return true;
+                          }
+
+                          // 如果是怪物元素，匹配相关的战斗任务（通过 monster_id）
+                          if (selectedElement.element_type === 'Monster' &&
+                              selectedElement.details.monster_id &&
+                              t.enemy_info &&
+                              t.enemy_info.enemy_id === selectedElement.details.monster_id) {
+                            return true;
+                          }
+
+                          return false;
+                        });
+                        if (tasksAtPosition.length === 0) return null;
+                        return (
+                          <div style={{
+                            marginTop: '12px',
+                            padding: '10px',
+                            backgroundColor: '#fffaf0',
+                            borderRadius: '6px',
+                            border: '1px solid #ed8936'
+                          }}>
+                            <div style={{ fontWeight: 'bold', marginBottom: '8px', color: '#c05621' }}>
+                              📋 此位置可接受的任务 ({tasksAtPosition.length})
+                            </div>
+                            {tasksAtPosition.map(task => (
+                              <div key={task.id} style={{
+                                padding: '8px',
+                                marginBottom: '6px',
+                                backgroundColor: 'white',
+                                borderRadius: '4px',
+                                border: '1px solid #e2e8f0'
+                              }}>
+                                <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>
+                                  <span style={{ color: '#718096', fontWeight: 'normal' }}>任务: </span>
+                                  {task.name}
+                                  {task.max_participants > 1 && (
+                                    <span style={{ marginLeft: '6px', fontSize: '0.8rem', color: '#667eea' }}>
+                                      👥 {task.assigned_to.length}/{task.max_participants}
+                                    </span>
+                                  )}
+                                </div>
+                                <div style={{ fontSize: '0.85rem', color: '#666' }}>
+                                  类型: {task.task_type.split('(')[0]}
+                                </div>
+                                <div style={{ fontSize: '0.85rem', color: '#666' }}>
+                                  奖励: 修为+{task.rewards.progress} 资源+{task.rewards.resources}
+                                </div>
+                                <div style={{ fontSize: '0.8rem', color: '#888', marginTop: '2px' }}>
+                                  ⏱️ 需要 {task.duration} 回合完成 | ⏰ {task.remaining_turns}回合后失效
+                                </div>
+                                {task.assigned_to.length > 0 && (
+                                  <div style={{ fontSize: '0.8rem', color: '#48bb78', marginTop: '4px' }}>
+                                    ✓ 已分配: {task.assigned_to.map(id => disciples.find(d => d.id === id)?.name).filter(Boolean).join('、')}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                 )}
@@ -549,6 +693,18 @@ const FullscreenMapView: React.FC<FullscreenMapViewProps> = ({
                         <span className="detail-label">体魄:</span>
                         <span className="detail-value">{selectedMapDisciple.constitution}/100</span>
                       </div>
+                      <div className="detail-row">
+                        <span className="detail-label">状态:</span>
+                        {selectedMapDisciple.current_task_info ? (
+                          <span className="detail-value" style={{ color: '#2c7a7b' }}>
+                            执行任务中
+                          </span>
+                        ) : (
+                          <span className="detail-value" style={{ color: '#48bb78' }}>
+                            空闲
+                          </span>
+                        )}
+                      </div>
                       {selectedMapDisciple.current_task_info && (
                         <div style={{
                           backgroundColor: '#e6fffa',
@@ -558,23 +714,202 @@ const FullscreenMapView: React.FC<FullscreenMapViewProps> = ({
                           color: '#234e52'
                         }}>
                           <span style={{ fontWeight: 'bold' }}>
-                            📋 正在执行任务
+                            📋 当前任务
                           </span>
                           <div style={{ fontSize: '12px', marginTop: '4px', color: '#2c7a7b' }}>
                             {selectedMapDisciple.current_task_info.task_name}
                           </div>
+                          <div style={{ fontSize: '11px', marginTop: '2px', color: '#4a5568' }}>
+                            进度: {selectedMapDisciple.current_task_info.progress}/{selectedMapDisciple.current_task_info.duration} 回合
+                          </div>
                         </div>
                       )}
+
+                      {/* 人物关系 */}
                       <div style={{
                         marginTop: '12px',
-                        padding: '8px',
-                        backgroundColor: '#bee3f8',
-                        borderRadius: '4px',
-                        fontSize: '13px',
-                        color: '#2c5282'
+                        padding: '10px',
+                        backgroundColor: '#faf5ff',
+                        borderRadius: '6px',
+                        border: '1px solid #d6bcfa'
                       }}>
-                        💡 点击地图上的任意位置来移动弟子
+                        <div
+                          style={{
+                            fontWeight: 'bold',
+                            marginBottom: '8px',
+                            color: '#6b46c1',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center'
+                          }}
+                          onClick={() => setShowRelationships(!showRelationships)}
+                        >
+                          <span>💜 人物关系 ({discipleRelationships.length})</span>
+                          <span style={{ fontSize: '0.8rem' }}>{showRelationships ? '▼' : '▶'}</span>
+                        </div>
+
+                        {/* 关系摘要 */}
+                        {selectedMapDisciple.relationship_summary && (
+                          <div style={{ fontSize: '0.85rem', color: '#553c9a', marginBottom: showRelationships ? '8px' : 0 }}>
+                            {selectedMapDisciple.relationship_summary.master_id && (
+                              <div>师父: {disciples.find(d => d.id === selectedMapDisciple.relationship_summary.master_id)?.name || '未知'}</div>
+                            )}
+                            {selectedMapDisciple.relationship_summary.dao_companion_id && (
+                              <div>道侣: {disciples.find(d => d.id === selectedMapDisciple.relationship_summary.dao_companion_id)?.name || '未知'}</div>
+                            )}
+                            {selectedMapDisciple.relationship_summary.disciple_ids.length > 0 && (
+                              <div>徒弟: {selectedMapDisciple.relationship_summary.disciple_ids.map(id => disciples.find(d => d.id === id)?.name).filter(Boolean).join('、')}</div>
+                            )}
+                            {!selectedMapDisciple.relationship_summary.master_id &&
+                             !selectedMapDisciple.relationship_summary.dao_companion_id &&
+                             selectedMapDisciple.relationship_summary.disciple_ids.length === 0 &&
+                             discipleRelationships.length === 0 && (
+                              <div style={{ color: '#a0aec0', fontStyle: 'italic' }}>暂无特殊关系</div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* 详细关系列表 */}
+                        {showRelationships && discipleRelationships.length > 0 && (
+                          <div style={{ marginTop: '8px' }}>
+                            {discipleRelationships.map(rel => (
+                              <div key={rel.target_id} style={{
+                                padding: '8px',
+                                marginBottom: '6px',
+                                backgroundColor: 'white',
+                                borderRadius: '4px',
+                                border: '1px solid #e9d8fd'
+                              }}>
+                                <div style={{ fontWeight: 'bold', marginBottom: '4px', display: 'flex', justifyContent: 'space-between' }}>
+                                  <span>{rel.target_name}</span>
+                                  <span style={{ fontSize: '0.8rem', color: '#805ad5' }}>{rel.primary_relation}</span>
+                                </div>
+                                <div style={{ fontSize: '0.8rem', color: '#718096' }}>
+                                  {rel.is_dao_companion && <span style={{ marginRight: '6px', color: '#e53e3e' }}>💕道侣</span>}
+                                  {rel.is_master && <span style={{ marginRight: '6px', color: '#3182ce' }}>👨‍🏫师父</span>}
+                                  {rel.is_disciple && <span style={{ marginRight: '6px', color: '#38a169' }}>👨‍🎓徒弟</span>}
+                                </div>
+                                <div style={{ fontSize: '0.75rem', color: '#a0aec0', marginTop: '4px' }}>
+                                  <span title="情感">💕{rel.scores.romance}</span>
+                                  <span style={{ marginLeft: '8px' }} title="师徒">📚{rel.scores.mentorship}</span>
+                                  <span style={{ marginLeft: '8px' }} title="战友">⚔️{rel.scores.comrade}</span>
+                                  <span style={{ marginLeft: '8px' }} title="认知">🧠{rel.scores.understanding}</span>
+                                  <span style={{ marginLeft: '8px' }} title="机缘">🍀{rel.scores.fateful_bond}</span>
+                                </div>
+                                <div style={{ fontSize: '0.75rem', color: '#805ad5', marginTop: '2px' }}>
+                                  关系等级: {rel.highest_level}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
+
+                      {/* 显示弟子当前位置可接受的任务 */}
+                      {!selectedMapDisciple.current_task_info && (() => {
+                        const tasksAtPosition = tasks.filter(t =>
+                          t.position &&
+                          t.position.x === selectedMapDisciple.position.x &&
+                          t.position.y === selectedMapDisciple.position.y &&
+                          // 任务未满员
+                          t.assigned_to.length < t.max_participants &&
+                          // 弟子尚未分配到该任务
+                          !t.assigned_to.includes(selectedMapDisciple.id) &&
+                          // 弟子适合该任务
+                          t.suitable_disciples.free.includes(selectedMapDisciple.id)
+                        );
+                        if (tasksAtPosition.length === 0) return null;
+                        return (
+                          <div style={{
+                            marginTop: '12px',
+                            padding: '10px',
+                            backgroundColor: '#f0fff4',
+                            borderRadius: '6px',
+                            border: '1px solid #48bb78'
+                          }}>
+                            <div style={{ fontWeight: 'bold', marginBottom: '8px', color: '#276749' }}>
+                              📋 可接受的任务 ({tasksAtPosition.length})
+                            </div>
+                            {tasksAtPosition.map(task => (
+                              <div key={task.id} style={{
+                                padding: '8px',
+                                marginBottom: '6px',
+                                backgroundColor: 'white',
+                                borderRadius: '4px',
+                                border: '1px solid #c6f6d5'
+                              }}>
+                                <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>
+                                  <span style={{ color: '#718096', fontWeight: 'normal' }}>任务: </span>
+                                  {task.name}
+                                  {task.max_participants > 1 && (
+                                    <span style={{ marginLeft: '6px', fontSize: '0.8rem', color: '#667eea' }}>
+                                      👥 {task.assigned_to.length}/{task.max_participants}
+                                    </span>
+                                  )}
+                                </div>
+                                <div style={{ fontSize: '0.85rem', color: '#666' }}>
+                                  类型: {task.task_type.split('(')[0]}
+                                </div>
+                                <div style={{ fontSize: '0.85rem', color: '#666' }}>
+                                  奖励: 修为+{task.rewards.progress} 资源+{task.rewards.resources}
+                                </div>
+                                <div style={{ fontSize: '0.8rem', color: '#888', marginTop: '2px' }}>
+                                  消耗: 精力-{task.energy_cost} 体魄-{task.constitution_cost}
+                                </div>
+                                <div style={{ fontSize: '0.8rem', color: '#888', marginTop: '2px' }}>
+                                  ⏱️ 需要 {task.duration} 回合 | ⏰ {task.remaining_turns}回合后失效
+                                </div>
+                                {task.assigned_to.length > 0 && (
+                                  <div style={{ fontSize: '0.8rem', color: '#48bb78', marginTop: '4px' }}>
+                                    已有: {task.assigned_to.map(id => disciples.find(d => d.id === id)?.name).filter(Boolean).join('、')}
+                                  </div>
+                                )}
+                                <button
+                                  onClick={() => assignTask(task.id, selectedMapDisciple.id)}
+                                  style={{
+                                    marginTop: '6px',
+                                    padding: '6px 12px',
+                                    backgroundColor: '#48bb78',
+                                    color: 'white',
+                                    border: 'none',
+                                    borderRadius: '4px',
+                                    cursor: 'pointer',
+                                    fontSize: '0.85rem',
+                                    fontWeight: 'bold'
+                                  }}
+                                >
+                                  ✓ 接受任务
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })()}
+
+                      {selectedMapDisciple.current_task_info ? (
+                        <div style={{
+                          marginTop: '12px',
+                          padding: '8px',
+                          backgroundColor: '#fed7d7',
+                          borderRadius: '4px',
+                          fontSize: '13px',
+                          color: '#c53030'
+                        }}>
+                          🚫 正在执行任务，无法移动
+                        </div>
+                      ) : (
+                        <div style={{
+                          marginTop: '12px',
+                          padding: '8px',
+                          backgroundColor: '#bee3f8',
+                          borderRadius: '4px',
+                          fontSize: '13px',
+                          color: '#2c5282'
+                        }}>
+                          💡 点击地图上的任意位置来移动弟子
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}

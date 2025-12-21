@@ -22,6 +22,7 @@ function App() {
   const [showBuildings, setShowBuildings] = useState(false);
   const [notifications, setNotifications] = useState<Array<{id: number, message: string, type: string}>>([]);
   const [pendingRecruitment, setPendingRecruitment] = useState<Disciple | null>(null);
+  const [mapPosition, setMapPosition] = useState({ x: 0, y: 0 }); // 地图位置状态提升，避免loading时重置
 
   useEffect(() => {
     // Fetch server version on mount
@@ -86,7 +87,7 @@ function App() {
     try {
       setLoading(true);
       // 记录当前正在进行的任务
-      const currentTasks = tasks.filter(t => t.assigned_to !== null);
+      const currentTasks = tasks.filter(t => t.assigned_to.length > 0);
 
       const turnResult = await gameApi.nextTurn(gameId);
       const newTasks = await gameApi.getTasks(gameId);
@@ -99,11 +100,14 @@ function App() {
       // 检测已完成的任务
       currentTasks.forEach(oldTask => {
         const stillExists = newTasks.find(t => t.id === oldTask.id);
-        if (!stillExists || stillExists.assigned_to === null) {
+        if (!stillExists || stillExists.assigned_to.length === 0) {
           // 任务已完成
-          const disciple = disciples.find(d => d.id === oldTask.assigned_to);
+          const assignedNames = oldTask.assigned_to
+            .map(id => disciples.find(d => d.id === id)?.name)
+            .filter(Boolean)
+            .join('、');
           addNotification(
-            `✅ ${disciple?.name || '弟子'} 完成了任务「${oldTask.name}」！获得修为+${oldTask.rewards.progress}`,
+            `✅ ${assignedNames || '弟子'} 完成了任务「${oldTask.name}」！获得修为+${oldTask.rewards.progress}`,
             'success'
           );
         }
@@ -159,8 +163,8 @@ function App() {
     }
   };
 
-  const refreshDisciplesAndMap = async () => {
-    if (!gameId) return;
+  const refreshDisciplesAndMap = async (_movedDiscipleId?: number): Promise<Disciple[]> => {
+    if (!gameId) return [];
     try {
       const [disciplesList, map] = await Promise.all([
         gameApi.getDisciples(gameId),
@@ -168,8 +172,10 @@ function App() {
       ]);
       setDisciples(disciplesList);
       setMapData(map);
+      return disciplesList;
     } catch (err: any) {
       console.error('Failed to refresh disciples and map:', err);
+      return [];
     }
   };
 
@@ -375,6 +381,8 @@ function App() {
           onAutoAssign={autoAssign}
           onNextTurn={nextTurn}
           onResetGame={resetGame}
+          mapPosition={mapPosition}
+          onMapPositionChange={setMapPosition}
         />
       </>
     );
@@ -720,10 +728,17 @@ function App() {
                     </div>
                   )}
 
-                  {d.dao_companion && (
+                  {d.relationship_summary?.dao_companion_id && (
                     <div className="companion-section">
                       <span className="companion-badge">
-                        💑 道侣 (亲密度: {d.dao_companion.affinity})
+                        💑 道侣: {disciples.find(x => x.id === d.relationship_summary.dao_companion_id)?.name || '未知'}
+                      </span>
+                    </div>
+                  )}
+                  {d.relationship_summary?.master_id && (
+                    <div className="master-section">
+                      <span className="master-badge">
+                        👨‍🏫 师父: {disciples.find(x => x.id === d.relationship_summary.master_id)?.name || '未知'}
                       </span>
                     </div>
                   )}
@@ -838,11 +853,21 @@ function App() {
                 </div>
                 <div className="task-costs" style={{marginTop: '0.5rem', fontSize: '0.85rem', color: '#888'}}>
                   <span>消耗: 精力 {t.energy_cost}/回合 | 体魄 {t.constitution_cost}/回合</span>
+                  {t.max_participants > 1 && (
+                    <span style={{marginLeft: '1rem', color: '#667eea'}}>
+                      👥 最多 {t.max_participants} 人
+                    </span>
+                  )}
                 </div>
-                {t.assigned_to ? (
+                {t.assigned_to.length > 0 ? (
                   <div>
                     <p className="assigned">
-                      ✓ 已分配给 {disciples.find(d => d.id === t.assigned_to)?.name}
+                      ✓ 已分配给 {t.assigned_to.map(id => disciples.find(d => d.id === id)?.name).filter(Boolean).join('、')}
+                      {t.max_participants > 1 && (
+                        <span style={{marginLeft: '0.5rem', color: '#888', fontSize: '0.85rem'}}>
+                          ({t.assigned_to.length}/{t.max_participants})
+                        </span>
+                      )}
                     </p>
                     {t.progress > 0 && (
                       <div className="task-progress-container">
@@ -855,6 +880,29 @@ function App() {
                         <span className="task-progress-text">
                           进度: {t.progress}/{t.duration}
                         </span>
+                      </div>
+                    )}
+                    {/* 如果还可以添加更多弟子 */}
+                    {t.assigned_to.length < t.max_participants && t.suitable_disciples && t.suitable_disciples.free.length > 0 && (
+                      <div style={{marginTop: '0.5rem', paddingTop: '0.5rem', borderTop: '1px dashed #ddd'}}>
+                        <div style={{fontSize: '0.8rem', color: '#667eea', marginBottom: '0.3rem'}}>
+                          ➕ 添加更多弟子 (还可加 {t.max_participants - t.assigned_to.length} 人):
+                        </div>
+                        <div className="assign-buttons">
+                          {disciples
+                            .filter(d => t.suitable_disciples.free.includes(d.id) && !t.assigned_to.includes(d.id))
+                            .map(d => (
+                              <button
+                                key={d.id}
+                                onClick={() => assignTask(t.id, d.id)}
+                                className="btn-small"
+                                title={`${d.name} - ${d.cultivation.level} ${d.cultivation.sub_level}`}
+                              >
+                                + {d.name}
+                              </button>
+                            ))
+                          }
+                        </div>
                       </div>
                     )}
                   </div>

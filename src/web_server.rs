@@ -89,6 +89,13 @@ pub fn create_router() -> Router {
         .route("/api/game/:game_id/buildings", get(get_building_tree))
         .route("/api/game/:game_id/buildings/build", post(build_building))
 
+        // 关系系统
+        .route("/api/game/:game_id/disciples/:disciple_id/relationships", get(get_disciple_relationships))
+        .route("/api/game/:game_id/relationships", get(get_all_relationships))
+        .route("/api/game/:game_id/relationships/mentorship", post(set_mentorship))
+        .route("/api/game/:game_id/relationships/dao-companion", post(set_dao_companion))
+        .route("/api/game/:game_id/relationships/update", post(update_relationship))
+
         .layer(CorsLayer::new()
             .allow_origin(Any)
             .allow_methods(Any)
@@ -198,7 +205,7 @@ async fn start_turn(
             .map(|task| {
                 let assignment = game.task_assignments.iter().find(|a| a.task_id == task.id);
                 let progress = assignment.map(|a| a.progress).unwrap_or(0);
-                let assigned_to = assignment.and_then(|a| a.disciple_id);
+                let assigned_to = assignment.map(|a| a.disciple_ids.clone()).unwrap_or_default();
                 let remaining_turns = if task.created_turn + task.expiry_turns > current_turn {
                     task.created_turn + task.expiry_turns - current_turn
                 } else {
@@ -212,9 +219,20 @@ async fn start_turn(
                 for disciple in &game.sect.disciples {
                     // 检查弟子是否适合该任务（技能和修为检查）
                     if task.is_suitable_for_disciple(disciple) {
+                        // 检查弟子是否在任务位置（如果任务有位置要求）
+                        let is_at_location = if let Some(task_pos) = &task.position {
+                            disciple.position.x == task_pos.x && disciple.position.y == task_pos.y
+                        } else {
+                            true // 没有位置要求的任务，所有弟子都可以
+                        };
+
+                        if !is_at_location {
+                            continue; // 弟子不在任务位置，跳过
+                        }
+
                         // 检查弟子是否正在执行其他任务
                         let is_busy = game.task_assignments.iter().any(|a|
-                            a.disciple_id == Some(disciple.id) && a.task_id != task.id
+                            a.disciple_ids.contains(&disciple.id) && a.task_id != task.id
                         );
 
                         if is_busy {
@@ -260,6 +278,7 @@ async fn start_turn(
                     },
                     dao_heart_impact: task.dao_heart_impact,
                     assigned_to,
+                    max_participants: task.max_participants,
                     duration: task.duration,
                     progress,
                     expiry_turns: task.expiry_turns,
@@ -356,7 +375,7 @@ async fn get_disciples(
         // 填充当前任务信息
         for disciple_dto in &mut disciples {
             // 查找弟子的任务分配
-            if let Some(assignment) = game.task_assignments.iter().find(|a| a.disciple_id == Some(disciple_dto.id)) {
+            if let Some(assignment) = game.task_assignments.iter().find(|a| a.contains_disciple(disciple_dto.id)) {
                 if let Some(task) = game.current_tasks.iter().find(|t| t.id == assignment.task_id) {
                     disciple_dto.current_task_info = Some(CurrentTaskInfo {
                         task_id: task.id,
@@ -599,7 +618,7 @@ async fn get_tasks(
             .map(|task| {
                 let assignment = game.task_assignments.iter().find(|a| a.task_id == task.id);
                 let progress = assignment.map(|a| a.progress).unwrap_or(0);
-                let assigned_to = assignment.and_then(|a| a.disciple_id);
+                let assigned_to = assignment.map(|a| a.disciple_ids.clone()).unwrap_or_default();
                 let remaining_turns = if task.created_turn + task.expiry_turns > current_turn {
                     task.created_turn + task.expiry_turns - current_turn
                 } else {
@@ -613,9 +632,20 @@ async fn get_tasks(
                 for disciple in &game.sect.disciples {
                     // 检查弟子是否适合该任务（技能和修为检查）
                     if task.is_suitable_for_disciple(disciple) {
+                        // 检查弟子是否在任务位置（如果任务有位置要求）
+                        let is_at_location = if let Some(task_pos) = &task.position {
+                            disciple.position.x == task_pos.x && disciple.position.y == task_pos.y
+                        } else {
+                            true // 没有位置要求的任务，所有弟子都可以
+                        };
+
+                        if !is_at_location {
+                            continue; // 弟子不在任务位置，跳过
+                        }
+
                         // 检查弟子是否正在执行其他任务
                         let is_busy = game.task_assignments.iter().any(|a|
-                            a.disciple_id == Some(disciple.id) && a.task_id != task.id
+                            a.disciple_ids.contains(&disciple.id) && a.task_id != task.id
                         );
 
                         if is_busy {
@@ -661,6 +691,7 @@ async fn get_tasks(
                     },
                     dao_heart_impact: task.dao_heart_impact,
                     assigned_to,
+                    max_participants: task.max_participants,
                     duration: task.duration,
                     progress,
                     expiry_turns: task.expiry_turns,
@@ -730,6 +761,37 @@ async fn assign_task(
                     }
                 }
 
+                // 检查任务是否已满
+                let max_participants = task.max_participants;
+                let current_count = game.task_assignments.iter()
+                    .find(|a| a.task_id == task_id)
+                    .map(|a| a.disciple_ids.len())
+                    .unwrap_or(0);
+
+                if current_count >= max_participants as usize {
+                    return (
+                        StatusCode::BAD_REQUEST,
+                        Json(ApiResponse::<AssignTaskResponse>::error(
+                            "TASK_FULL".to_string(),
+                            format!("任务已满，最多允许{}人参与", max_participants),
+                        )),
+                    );
+                }
+
+                // 检查弟子是否已经在其他任务中
+                let already_in_other_task = game.task_assignments.iter()
+                    .any(|a| a.task_id != task_id && a.disciple_ids.contains(&req.disciple_id));
+
+                if already_in_other_task {
+                    return (
+                        StatusCode::BAD_REQUEST,
+                        Json(ApiResponse::<AssignTaskResponse>::error(
+                            "DISCIPLE_BUSY".to_string(),
+                            format!("弟子 {} 已在执行其他任务", disciple.name),
+                        )),
+                    );
+                }
+
                 // 克隆守卫任务相关信息以避免借用冲突
                 let enemy_name_opt = if task.name.contains("守卫") {
                     if let crate::task::TaskType::Combat(combat_task) = &task.task_type {
@@ -743,7 +805,8 @@ async fn assign_task(
 
                 // 在 task_assignments 中找到对应的分配记录
                 if let Some(assignment) = game.task_assignments.iter_mut().find(|a| a.task_id == task_id) {
-                    assignment.disciple_id = Some(req.disciple_id);
+                    assignment.add_disciple(req.disciple_id);
+                    let current_count = assignment.disciple_ids.len();
 
                     // 如果是守卫任务，锁定妖魔的移动
                     if let Some(enemy_name) = enemy_name_opt {
@@ -753,7 +816,7 @@ async fn assign_task(
                     let response = AssignTaskResponse {
                         task_id,
                         disciple_id: req.disciple_id,
-                        message: "任务分配成功".to_string(),
+                        message: format!("任务分配成功 ({}/{}人)", current_count, max_participants),
                     };
 
                     (StatusCode::OK, Json(ApiResponse::ok(response)))
@@ -818,14 +881,15 @@ async fn unassign_task(
 
             // 在 task_assignments 中找到对应的分配记录
             if let Some(assignment) = game.task_assignments.iter_mut().find(|a| a.task_id == task_id) {
-                assignment.disciple_id = None;
+                let removed_count = assignment.disciple_ids.len();
+                assignment.disciple_ids.clear();
 
                 // 如果是守卫任务，解锁妖魔的移动
                 if let Some(enemy_name) = enemy_name_opt {
                     game.map.unlock_monster_for_defense_task(&enemy_name);
                 }
 
-                (StatusCode::OK, Json(ApiResponse::ok("取消成功".to_string())))
+                (StatusCode::OK, Json(ApiResponse::ok(format!("取消成功，移除了{}名弟子", removed_count))))
             } else {
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
@@ -1072,6 +1136,7 @@ async fn get_map(
                         "Monster".to_string(),
                         m.name.clone(),
                         MapElementDetails::Monster {
+                            monster_id: format!("monster_{}", m.id),
                             level: m.level,
                             is_demon: m.is_demon,
                             growth_rate: m.growth_rate,
@@ -1429,6 +1494,292 @@ async fn build_building(
         (
             StatusCode::NOT_FOUND,
             Json(ApiResponse::<BuildBuildingResponse>::error(
+                "GAME_NOT_FOUND".to_string(),
+                "游戏不存在".to_string(),
+            )),
+        )
+    }
+}
+
+// ==================== 关系系统 API ====================
+
+/// 获取弟子的所有关系
+async fn get_disciple_relationships(
+    State(store): State<AppState>,
+    Path((game_id, disciple_id)): Path<(String, usize)>,
+) -> impl IntoResponse {
+    if let Some(game_mutex) = store.get_game(&game_id) {
+        let game = game_mutex.lock().await;
+
+        if let Some(disciple) = game.sect.disciples.iter().find(|d| d.id == disciple_id) {
+            let relationships: Vec<RelationshipDto> = disciple.relationships.iter()
+                .filter_map(|rel| {
+                    let target = game.sect.disciples.iter().find(|d| d.id == rel.target_id)?;
+                    Some(RelationshipDto {
+                        target_id: rel.target_id,
+                        target_name: target.name.clone(),
+                        scores: (&rel.scores).into(),
+                        established_year: rel.established_year,
+                        is_dao_companion: rel.is_dao_companion,
+                        is_master: rel.is_master,
+                        is_disciple: rel.is_disciple,
+                        primary_relation: rel.get_primary_relation().to_string(),
+                        highest_level: rel.scores.highest_level().name().to_string(),
+                    })
+                })
+                .collect();
+
+            let response = DiscipleRelationshipsResponse {
+                disciple_id,
+                disciple_name: disciple.name.clone(),
+                relationships,
+            };
+
+            (StatusCode::OK, Json(ApiResponse::ok(response)))
+        } else {
+            (
+                StatusCode::NOT_FOUND,
+                Json(ApiResponse::<DiscipleRelationshipsResponse>::error(
+                    "DISCIPLE_NOT_FOUND".to_string(),
+                    "弟子不存在".to_string(),
+                )),
+            )
+        }
+    } else {
+        (
+            StatusCode::NOT_FOUND,
+            Json(ApiResponse::<DiscipleRelationshipsResponse>::error(
+                "GAME_NOT_FOUND".to_string(),
+                "游戏不存在".to_string(),
+            )),
+        )
+    }
+}
+
+/// 获取所有关系
+async fn get_all_relationships(
+    State(store): State<AppState>,
+    Path(game_id): Path<String>,
+) -> impl IntoResponse {
+    if let Some(game_mutex) = store.get_game(&game_id) {
+        let game = game_mutex.lock().await;
+
+        let mut all_relationships = Vec::new();
+
+        for disciple in &game.sect.disciples {
+            for rel in &disciple.relationships {
+                if let Some(target) = game.sect.disciples.iter().find(|d| d.id == rel.target_id) {
+                    all_relationships.push(RelationshipPairDto {
+                        from_id: disciple.id,
+                        from_name: disciple.name.clone(),
+                        to_id: rel.target_id,
+                        to_name: target.name.clone(),
+                        scores: (&rel.scores).into(),
+                        primary_relation: rel.get_primary_relation().to_string(),
+                    });
+                }
+            }
+        }
+
+        let response = AllRelationshipsResponse {
+            total_relationships: all_relationships.len(),
+            relationships: all_relationships,
+        };
+
+        (StatusCode::OK, Json(ApiResponse::ok(response)))
+    } else {
+        (
+            StatusCode::NOT_FOUND,
+            Json(ApiResponse::<AllRelationshipsResponse>::error(
+                "GAME_NOT_FOUND".to_string(),
+                "游戏不存在".to_string(),
+            )),
+        )
+    }
+}
+
+/// 设置师徒关系
+async fn set_mentorship(
+    State(store): State<AppState>,
+    Path(game_id): Path<String>,
+    Json(req): Json<SetMentorshipRequest>,
+) -> impl IntoResponse {
+    if let Some(game_mutex) = store.get_game(&game_id) {
+        let mut game = game_mutex.lock().await;
+
+        // 获取名称用于响应
+        let master_name = game.sect.disciples.iter()
+            .find(|d| d.id == req.master_id)
+            .map(|d| d.name.clone())
+            .unwrap_or_else(|| "未知".to_string());
+        let disciple_name = game.sect.disciples.iter()
+            .find(|d| d.id == req.disciple_id)
+            .map(|d| d.name.clone())
+            .unwrap_or_else(|| "未知".to_string());
+
+        match game.sect.set_mentorship(req.master_id, req.disciple_id) {
+            Ok(()) => {
+                let response = SetMentorshipResponse {
+                    success: true,
+                    message: format!("{} 正式拜 {} 为师", disciple_name, master_name),
+                    master_name,
+                    disciple_name,
+                };
+                (StatusCode::OK, Json(ApiResponse::ok(response)))
+            }
+            Err(err) => {
+                (
+                    StatusCode::BAD_REQUEST,
+                    Json(ApiResponse::<SetMentorshipResponse>::error(
+                        "MENTORSHIP_FAILED".to_string(),
+                        err,
+                    )),
+                )
+            }
+        }
+    } else {
+        (
+            StatusCode::NOT_FOUND,
+            Json(ApiResponse::<SetMentorshipResponse>::error(
+                "GAME_NOT_FOUND".to_string(),
+                "游戏不存在".to_string(),
+            )),
+        )
+    }
+}
+
+/// 设置道侣关系
+async fn set_dao_companion(
+    State(store): State<AppState>,
+    Path(game_id): Path<String>,
+    Json(req): Json<SetDaoCompanionRequest>,
+) -> impl IntoResponse {
+    if let Some(game_mutex) = store.get_game(&game_id) {
+        let mut game = game_mutex.lock().await;
+
+        // 获取名称用于响应
+        let disciple1_name = game.sect.disciples.iter()
+            .find(|d| d.id == req.disciple1_id)
+            .map(|d| d.name.clone())
+            .unwrap_or_else(|| "未知".to_string());
+        let disciple2_name = game.sect.disciples.iter()
+            .find(|d| d.id == req.disciple2_id)
+            .map(|d| d.name.clone())
+            .unwrap_or_else(|| "未知".to_string());
+
+        match game.sect.set_dao_companion(req.disciple1_id, req.disciple2_id) {
+            Ok(()) => {
+                let response = SetDaoCompanionResponse {
+                    success: true,
+                    message: format!("{} 与 {} 结为道侣", disciple1_name, disciple2_name),
+                    disciple1_name,
+                    disciple2_name,
+                };
+                (StatusCode::OK, Json(ApiResponse::ok(response)))
+            }
+            Err(err) => {
+                (
+                    StatusCode::BAD_REQUEST,
+                    Json(ApiResponse::<SetDaoCompanionResponse>::error(
+                        "DAO_COMPANION_FAILED".to_string(),
+                        err,
+                    )),
+                )
+            }
+        }
+    } else {
+        (
+            StatusCode::NOT_FOUND,
+            Json(ApiResponse::<SetDaoCompanionResponse>::error(
+                "GAME_NOT_FOUND".to_string(),
+                "游戏不存在".to_string(),
+            )),
+        )
+    }
+}
+
+/// 更新关系分数
+async fn update_relationship(
+    State(store): State<AppState>,
+    Path(game_id): Path<String>,
+    Json(req): Json<UpdateRelationshipRequest>,
+) -> impl IntoResponse {
+    use crate::relationship::RelationDimension;
+
+    if let Some(game_mutex) = store.get_game(&game_id) {
+        let mut game = game_mutex.lock().await;
+
+        // 解析维度
+        let dimension = match req.dimension.as_str() {
+            "Romance" | "romance" => RelationDimension::Romance,
+            "Mentorship" | "mentorship" => RelationDimension::Mentorship,
+            "Comrade" | "comrade" => RelationDimension::Comrade,
+            "Understanding" | "understanding" => RelationDimension::Understanding,
+            "FatefulBond" | "fateful_bond" => RelationDimension::FatefulBond,
+            _ => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(ApiResponse::<UpdateRelationshipResponse>::error(
+                        "INVALID_DIMENSION".to_string(),
+                        format!("无效的关系维度: {}", req.dimension),
+                    )),
+                );
+            }
+        };
+
+        // 获取名称用于响应
+        let from_name = game.sect.disciples.iter()
+            .find(|d| d.id == req.from_id)
+            .map(|d| d.name.clone())
+            .unwrap_or_else(|| "未知".to_string());
+        let to_name = game.sect.disciples.iter()
+            .find(|d| d.id == req.to_id)
+            .map(|d| d.name.clone())
+            .unwrap_or_else(|| "未知".to_string());
+
+        // 获取旧分数
+        let old_score = game.sect.disciples.iter()
+            .find(|d| d.id == req.from_id)
+            .and_then(|d| d.get_relationship(req.to_id))
+            .map(|rel| rel.scores.get(dimension))
+            .unwrap_or(0);
+
+        match game.sect.update_relationship_score(req.from_id, req.to_id, dimension, req.delta) {
+            Ok(level_up) => {
+                // 获取新分数
+                let new_score = game.sect.disciples.iter()
+                    .find(|d| d.id == req.from_id)
+                    .and_then(|d| d.get_relationship(req.to_id))
+                    .map(|rel| rel.scores.get(dimension))
+                    .unwrap_or(0);
+
+                let response = UpdateRelationshipResponse {
+                    success: true,
+                    message: format!("{} 对 {} 的{}关系变化: {} -> {}",
+                        from_name, to_name, dimension.name(), old_score, new_score),
+                    from_name,
+                    to_name,
+                    dimension: req.dimension,
+                    old_score,
+                    new_score,
+                    level_up: level_up.map(|l| l.name().to_string()),
+                };
+                (StatusCode::OK, Json(ApiResponse::ok(response)))
+            }
+            Err(err) => {
+                (
+                    StatusCode::BAD_REQUEST,
+                    Json(ApiResponse::<UpdateRelationshipResponse>::error(
+                        "UPDATE_FAILED".to_string(),
+                        err,
+                    )),
+                )
+            }
+        }
+    } else {
+        (
+            StatusCode::NOT_FOUND,
+            Json(ApiResponse::<UpdateRelationshipResponse>::error(
                 "GAME_NOT_FOUND".to_string(),
                 "游戏不存在".to_string(),
             )),

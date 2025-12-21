@@ -65,6 +65,7 @@ pub struct Task {
     pub constitution_cost: u32, // 体魄消耗（每回合）
     pub location_id: Option<String>, // 任务关联的地点ID（用于确保同一地点同一类型任务唯一性）
     pub position: Option<Position>,  // 任务位置（需要弟子到达才能执行）
+    pub max_participants: u32,  // 最大参与人数（1=单人任务，>1=多人任务）
 }
 
 impl Task {
@@ -75,13 +76,13 @@ impl Task {
         progress_reward: u32,
         resource_reward: u32,
     ) -> Self {
-        // 根据任务类型设置默认执行时间和消耗
-        let (duration, energy_cost, constitution_cost) = match &task_type {
-            TaskType::Gathering(_) => (1, 5, 2),      // 采集任务：1回合，消耗少
-            TaskType::Combat(_) => (2, 15, 10),        // 战斗任务：2回合，消耗大
-            TaskType::Exploration(_) => (3, 10, 5),    // 探索任务：3回合，中等消耗
-            TaskType::Auxiliary(_) => (1, 5, 3),       // 辅助任务：1回合，消耗少
-            TaskType::Investment(_) => (4, 3, 1),      // 投资任务：4回合，消耗很少
+        // 根据任务类型设置默认执行时间、消耗和最大参与人数
+        let (duration, energy_cost, constitution_cost, max_participants) = match &task_type {
+            TaskType::Gathering(_) => (1, 5, 2, 2),      // 采集任务：最多2人
+            TaskType::Combat(_) => (2, 15, 10, 3),       // 战斗任务：最多3人
+            TaskType::Exploration(_) => (3, 10, 5, 2),   // 探索任务：最多2人
+            TaskType::Auxiliary(_) => (1, 5, 3, 1),      // 辅助任务：单人
+            TaskType::Investment(_) => (4, 3, 1, 1),     // 投资任务：单人
         };
 
         Self {
@@ -99,6 +100,7 @@ impl Task {
             constitution_cost,
             location_id: None,  // 默认无地点关联
             position: None,     // 默认无位置要求
+            max_participants,
         }
     }
 
@@ -113,13 +115,13 @@ impl Task {
         dao_heart_impact: i32,
         created_turn: u32,
     ) -> Self {
-        // 根据任务类型设置默认执行时间和消耗
-        let (duration, energy_cost, constitution_cost) = match &task_type {
-            TaskType::Gathering(_) => (1, 5, 2),
-            TaskType::Combat(_) => (2, 15, 10),
-            TaskType::Exploration(_) => (3, 10, 5),
-            TaskType::Auxiliary(_) => (1, 5, 3),
-            TaskType::Investment(_) => (4, 3, 1),
+        // 根据任务类型设置默认执行时间、消耗和最大参与人数
+        let (duration, energy_cost, constitution_cost, max_participants) = match &task_type {
+            TaskType::Gathering(_) => (1, 5, 2, 2),
+            TaskType::Combat(_) => (2, 15, 10, 3),
+            TaskType::Exploration(_) => (3, 10, 5, 2),
+            TaskType::Auxiliary(_) => (1, 5, 3, 1),
+            TaskType::Investment(_) => (4, 3, 1, 1),
         };
 
         Self {
@@ -137,6 +139,7 @@ impl Task {
             constitution_cost,
             location_id: None,  // 默认无地点关联
             position: None,     // 默认无位置要求
+            max_participants,
         }
     }
 

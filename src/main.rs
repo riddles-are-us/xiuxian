@@ -14,6 +14,7 @@ mod pill;
 mod config;
 mod modifier;
 mod building;
+mod relationship;
 
 use interactive::InteractiveGame;
 use ui::UI;

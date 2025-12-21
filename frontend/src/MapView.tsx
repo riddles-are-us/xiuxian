@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { MapData, MapElement, Disciple, gameApi } from './api/gameApi';
 import './MapView.css';
 
@@ -6,7 +6,7 @@ interface MapViewProps {
   mapData: MapData;
   disciples: Disciple[];
   gameId: string;
-  onDiscipleMoved?: () => void;
+  onDiscipleMoved?: (movedDiscipleId: number) => void;  // 传递移动的弟子ID
   onElementSelected?: (element: MapElement | null) => void;
   onDiscipleSelected?: (disciple: Disciple | null) => void;
   onMoveError?: (error: string | null) => void;
@@ -30,6 +30,16 @@ const MapView: React.FC<MapViewProps> = ({
 }) => {
   const [hoveredPosition, setHoveredPosition] = useState<{x: number, y: number} | null>(null);
   const [selectedDisciple, setSelectedDisciple] = useState<Disciple | null>(null);
+
+  // 当弟子数据更新时，同步更新选中的弟子状态（保持选中但更新数据）
+  useEffect(() => {
+    if (selectedDisciple) {
+      const updatedDisciple = disciples.find(d => d.id === selectedDisciple.id);
+      if (updatedDisciple) {
+        setSelectedDisciple(updatedDisciple);
+      }
+    }
+  }, [disciples]);
 
   // 获取指定位置的元素
   const getElementAt = (x: number, y: number): MapElement | undefined => {
@@ -58,36 +68,61 @@ const MapView: React.FC<MapViewProps> = ({
   const handleTileClick = async (x: number, y: number) => {
     const disciplesAtPosition = getDisciplesAt(x, y);
 
-    // 如果点击位置有弟子
-    if (disciplesAtPosition.length > 0) {
-      const disciple = disciplesAtPosition[0];
+    // 如果当前有选中的弟子
+    if (selectedDisciple) {
+      // 如果点击的是自己当前的位置，取消选中
+      if (selectedDisciple.position.x === x && selectedDisciple.position.y === y) {
+        // 如果该位置有其他弟子，切换到下一个弟子
+        const otherDisciples = disciplesAtPosition.filter(d => d.id !== selectedDisciple.id);
+        if (otherDisciples.length > 0) {
+          setSelectedDisciple(otherDisciples[0]);
+          onDiscipleSelected?.(otherDisciples[0]);
+          onMoveError?.(null);
+        } else {
+          // 没有其他弟子，取消选中
+          setSelectedDisciple(null);
+          onDiscipleSelected?.(null);
+          onMoveError?.(null);
+        }
+        return;
+      }
 
-      // 如果点击的是已经选中的弟子，取消选中
-      if (selectedDisciple && selectedDisciple.id === disciple.id) {
-        setSelectedDisciple(null);
-        onDiscipleSelected?.(null);
+      // 检查弟子是否正在执行任务
+      if (selectedDisciple.current_task_info) {
+        onMoveError?.(`${selectedDisciple.name}正在执行任务，无法移动`);
+        return;
+      }
+
+      // 检查是否在移动范围内，如果在范围内则移动
+      if (isInMovementRange(x, y, selectedDisciple)) {
+        await moveDisciple(selectedDisciple.id, x, y);
+        return;
+      }
+
+      // 不在移动范围内，如果点击位置有弟子则切换选中
+      if (disciplesAtPosition.length > 0) {
+        const disciple = disciplesAtPosition[0];
+        setSelectedDisciple(disciple);
+        onDiscipleSelected?.(disciple);
+        onElementSelected?.(null);
         onMoveError?.(null);
         return;
       }
 
-      // 否则选择该弟子
+      // 不在范围内且没有弟子，显示错误
+      const distance = getManhattanDistance(selectedDisciple.position.x, selectedDisciple.position.y, x, y);
+      const error = `移动距离(${distance})超出范围！${selectedDisciple.name}的最大移动距离为${selectedDisciple.movement_range}格`;
+      onMoveError?.(error);
+      return;
+    }
+
+    // 没有选中弟子时，如果点击位置有弟子则选中
+    if (disciplesAtPosition.length > 0) {
+      const disciple = disciplesAtPosition[0];
       setSelectedDisciple(disciple);
       onDiscipleSelected?.(disciple);
       onElementSelected?.(null);
       onMoveError?.(null);
-      return;
-    }
-
-    // 如果当前有选中的弟子，则移动弟子
-    if (selectedDisciple) {
-      // 检查是否在移动范围内
-      if (!isInMovementRange(x, y, selectedDisciple)) {
-        const distance = getManhattanDistance(selectedDisciple.position.x, selectedDisciple.position.y, x, y);
-        const error = `移动距离(${distance})超出范围！${selectedDisciple.name}的最大移动距离为${selectedDisciple.movement_range}格`;
-        onMoveError?.(error);
-        return;
-      }
-      await moveDisciple(selectedDisciple.id, x, y);
       return;
     }
 
@@ -105,10 +140,9 @@ const MapView: React.FC<MapViewProps> = ({
 
     try {
       await gameApi.moveDisciple(gameId, discipleId, x, y);
-      setSelectedDisciple(null);
-      onDiscipleSelected?.(null);
+      // 不清除选中状态，让父组件刷新后重新选中该弟子
       if (onDiscipleMoved) {
-        await onDiscipleMoved();
+        await onDiscipleMoved(discipleId);
       }
     } catch (error: any) {
       const errorMsg = error.response?.data?.error?.message || '移动失败';

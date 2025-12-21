@@ -2,6 +2,7 @@ use crate::cultivation::{CultivationLevel, SubLevel, CultivationPath};
 use crate::task::{Task, TaskType};
 use crate::modifier::{ModifierStack, ModifierTarget, Modifier, ModifierSource};
 use crate::map::Position;
+use crate::relationship::Relationship;
 
 /// 弟子类型
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -42,13 +43,6 @@ pub struct Heritage {
     pub name: String,
     pub level: CultivationLevel,
     pub tribulation_bonus: f32, // 渡劫成功率加成
-}
-
-/// 道侣关系
-#[derive(Debug, Clone)]
-pub struct DaoCompanion {
-    pub companion_id: usize,
-    pub affinity: u32, // 亲密度
 }
 
 /// 修行进度
@@ -135,7 +129,7 @@ pub struct Disciple {
     pub energy: u32,     // 精力 0-100 (native value)
     pub constitution: u32, // 体魄 0-100 (native value)
     pub heritage: Option<Heritage>,
-    pub dao_companion: Option<DaoCompanion>,
+    pub relationships: Vec<Relationship>, // 与其他弟子的关系
     pub children: Vec<usize>, // 子女ID列表
     pub modifiers: ModifierStack, // Modifier系统
     pub position: Position, // 弟子在地图上的位置
@@ -159,7 +153,7 @@ impl Disciple {
             energy: 100,        // 初始精力满值
             constitution: 100,  // 初始体魄满值
             heritage: None,
-            dao_companion: None,
+            relationships: Vec::new(),
             children: Vec::new(),
             modifiers: ModifierStack::new(),
             position: Position { x: 10, y: 10 }, // 初始位置在宗门
@@ -464,5 +458,60 @@ impl Disciple {
         } else {
             None
         }
+    }
+
+    // === 关系系统方法 ===
+
+    /// 获取与指定弟子的关系
+    pub fn get_relationship(&self, target_id: usize) -> Option<&Relationship> {
+        self.relationships.iter().find(|r| r.target_id == target_id)
+    }
+
+    /// 获取与指定弟子的关系（可变引用）
+    pub fn get_relationship_mut(&mut self, target_id: usize) -> Option<&mut Relationship> {
+        self.relationships.iter_mut().find(|r| r.target_id == target_id)
+    }
+
+    /// 添加或获取与指定弟子的关系
+    pub fn get_or_create_relationship(&mut self, target_id: usize, year: u32) -> &mut Relationship {
+        if !self.relationships.iter().any(|r| r.target_id == target_id) {
+            self.relationships.push(Relationship::new(target_id, year));
+        }
+        self.get_relationship_mut(target_id).unwrap()
+    }
+
+    /// 移除与指定弟子的关系
+    pub fn remove_relationship(&mut self, target_id: usize) {
+        self.relationships.retain(|r| r.target_id != target_id);
+    }
+
+    /// 获取道侣ID（如果有）
+    pub fn get_dao_companion_id(&self) -> Option<usize> {
+        self.relationships
+            .iter()
+            .find(|r| r.is_dao_companion)
+            .map(|r| r.target_id)
+    }
+
+    /// 获取师父ID（如果有）
+    pub fn get_master_id(&self) -> Option<usize> {
+        self.relationships
+            .iter()
+            .find(|r| r.is_master)
+            .map(|r| r.target_id)
+    }
+
+    /// 获取所有徒弟ID
+    pub fn get_disciple_ids(&self) -> Vec<usize> {
+        self.relationships
+            .iter()
+            .filter(|r| r.is_disciple)
+            .map(|r| r.target_id)
+            .collect()
+    }
+
+    /// 是否有道侣
+    pub fn has_dao_companion(&self) -> bool {
+        self.relationships.iter().any(|r| r.is_dao_companion)
     }
 }
