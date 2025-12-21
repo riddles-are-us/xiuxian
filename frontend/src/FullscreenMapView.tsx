@@ -655,11 +655,84 @@ const FullscreenMapView: React.FC<FullscreenMapViewProps> = ({
                         <span className="detail-value">{selectedMapDisciple.disciple_type}</span>
                       </div>
                       <div className="detail-row">
+                        <span className="detail-label">年龄:</span>
+                        <span className="detail-value">
+                          {selectedMapDisciple.age} 岁 / {selectedMapDisciple.lifespan} 岁
+                        </span>
+                      </div>
+                      <div className="detail-row">
                         <span className="detail-label">修为:</span>
                         <span className="detail-value">
                           {selectedMapDisciple.cultivation.level} {selectedMapDisciple.cultivation.sub_level}
                         </span>
                       </div>
+                      <div className="detail-row">
+                        <span className="detail-label">修为进度:</span>
+                        <span className="detail-value">
+                          <span style={{
+                            display: 'inline-block',
+                            width: '60px',
+                            height: '8px',
+                            backgroundColor: '#e2e8f0',
+                            borderRadius: '4px',
+                            marginRight: '6px',
+                            verticalAlign: 'middle'
+                          }}>
+                            <span style={{
+                              display: 'block',
+                              width: `${selectedMapDisciple.cultivation.progress}%`,
+                              height: '100%',
+                              backgroundColor: '#667eea',
+                              borderRadius: '4px'
+                            }}></span>
+                          </span>
+                          {selectedMapDisciple.cultivation.progress}%
+                        </span>
+                      </div>
+                      <div className="detail-row">
+                        <span className="detail-label">道心:</span>
+                        <span className="detail-value" style={{
+                          color: selectedMapDisciple.dao_heart >= 80 ? '#48bb78' :
+                                 selectedMapDisciple.dao_heart >= 50 ? '#ed8936' : '#f56565',
+                          fontWeight: 'bold'
+                        }}>
+                          {selectedMapDisciple.dao_heart}
+                        </span>
+                      </div>
+                      <div className="detail-row">
+                        <span className="detail-label">精力:</span>
+                        <span className="detail-value" style={{
+                          color: selectedMapDisciple.energy >= 70 ? '#48bb78' :
+                                 selectedMapDisciple.energy >= 30 ? '#ed8936' : '#f56565'
+                        }}>
+                          {selectedMapDisciple.energy}/100
+                        </span>
+                      </div>
+                      <div className="detail-row">
+                        <span className="detail-label">体魄:</span>
+                        <span className="detail-value" style={{
+                          color: selectedMapDisciple.constitution >= 70 ? '#48bb78' :
+                                 selectedMapDisciple.constitution >= 30 ? '#ed8936' : '#f56565'
+                        }}>
+                          {selectedMapDisciple.constitution}/100
+                        </span>
+                      </div>
+                      {selectedMapDisciple.talents.length > 0 && (
+                        <div className="detail-row">
+                          <span className="detail-label">天赋:</span>
+                          <span className="detail-value">
+                            {selectedMapDisciple.talents.map(t => `${t.talent_type}(${t.level})`).join('、')}
+                          </span>
+                        </div>
+                      )}
+                      {selectedMapDisciple.heritage && (
+                        <div className="detail-row">
+                          <span className="detail-label">传承:</span>
+                          <span className="detail-value" style={{ color: '#805ad5' }}>
+                            {selectedMapDisciple.heritage.name} ({selectedMapDisciple.heritage.level})
+                          </span>
+                        </div>
+                      )}
                       <div className="detail-row">
                         <span className="detail-label">位置:</span>
                         <span className="detail-value">
@@ -684,14 +757,6 @@ const FullscreenMapView: React.FC<FullscreenMapViewProps> = ({
                         }}>
                           {selectedMapDisciple.moves_remaining} 格
                         </span>
-                      </div>
-                      <div className="detail-row">
-                        <span className="detail-label">精力:</span>
-                        <span className="detail-value">{selectedMapDisciple.energy}/100</span>
-                      </div>
-                      <div className="detail-row">
-                        <span className="detail-label">体魄:</span>
-                        <span className="detail-value">{selectedMapDisciple.constitution}/100</span>
                       </div>
                       <div className="detail-row">
                         <span className="detail-label">状态:</span>
@@ -808,18 +873,38 @@ const FullscreenMapView: React.FC<FullscreenMapViewProps> = ({
 
                       {/* 显示弟子当前位置可接受的任务 */}
                       {!selectedMapDisciple.current_task_info && (() => {
+                        // 获取该位置所有任务（不过滤弟子条件）
                         const tasksAtPosition = tasks.filter(t =>
                           t.position &&
                           t.position.x === selectedMapDisciple.position.x &&
-                          t.position.y === selectedMapDisciple.position.y &&
-                          // 任务未满员
-                          t.assigned_to.length < t.max_participants &&
-                          // 弟子尚未分配到该任务
-                          !t.assigned_to.includes(selectedMapDisciple.id) &&
-                          // 弟子适合该任务
-                          t.suitable_disciples.free.includes(selectedMapDisciple.id)
+                          t.position.y === selectedMapDisciple.position.y
                         );
                         if (tasksAtPosition.length === 0) return null;
+
+                        // 判断弟子是否可以接受任务，返回原因
+                        const getTaskStatus = (task: Task) => {
+                          if (task.assigned_to.includes(selectedMapDisciple.id)) {
+                            return { canAccept: false, reason: '已接受此任务' };
+                          }
+                          if (task.assigned_to.length >= task.max_participants) {
+                            return { canAccept: false, reason: '任务人数已满' };
+                          }
+                          if (task.suitable_disciples.free.includes(selectedMapDisciple.id)) {
+                            return { canAccept: true, reason: '' };
+                          }
+                          if (task.suitable_disciples.busy.includes(selectedMapDisciple.id)) {
+                            return { canAccept: false, reason: '需要完成当前任务' };
+                          }
+                          // 不在 free 也不在 busy，说明不满足技能要求
+                          if (task.skill_required) {
+                            return { canAccept: false, reason: `需要技能: ${task.skill_required}` };
+                          }
+                          return { canAccept: false, reason: '不满足任务条件' };
+                        };
+
+                        const acceptableTasks = tasksAtPosition.filter(t => getTaskStatus(t).canAccept);
+                        const unacceptableTasks = tasksAtPosition.filter(t => !getTaskStatus(t).canAccept);
+
                         return (
                           <div style={{
                             marginTop: '12px',
@@ -829,9 +914,10 @@ const FullscreenMapView: React.FC<FullscreenMapViewProps> = ({
                             border: '1px solid #48bb78'
                           }}>
                             <div style={{ fontWeight: 'bold', marginBottom: '8px', color: '#276749' }}>
-                              📋 可接受的任务 ({tasksAtPosition.length})
+                              📋 此位置的任务 ({tasksAtPosition.length})
                             </div>
-                            {tasksAtPosition.map(task => (
+                            {/* 可接受的任务 */}
+                            {acceptableTasks.map(task => (
                               <div key={task.id} style={{
                                 padding: '8px',
                                 marginBottom: '6px',
@@ -883,6 +969,56 @@ const FullscreenMapView: React.FC<FullscreenMapViewProps> = ({
                                 </button>
                               </div>
                             ))}
+                            {/* 无法接受的任务 */}
+                            {unacceptableTasks.map(task => {
+                              const status = getTaskStatus(task);
+                              return (
+                                <div key={task.id} style={{
+                                  padding: '8px',
+                                  marginBottom: '6px',
+                                  backgroundColor: '#f7f7f7',
+                                  borderRadius: '4px',
+                                  border: '1px solid #e2e2e2',
+                                  opacity: 0.8
+                                }}>
+                                  <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>
+                                    <span style={{ color: '#718096', fontWeight: 'normal' }}>任务: </span>
+                                    {task.name}
+                                    {task.max_participants > 1 && (
+                                      <span style={{ marginLeft: '6px', fontSize: '0.8rem', color: '#667eea' }}>
+                                        👥 {task.assigned_to.length}/{task.max_participants}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div style={{ fontSize: '0.85rem', color: '#666' }}>
+                                    类型: {task.task_type.split('(')[0]}
+                                  </div>
+                                  <div style={{ fontSize: '0.85rem', color: '#666' }}>
+                                    奖励: 修为+{task.rewards.progress} 资源+{task.rewards.resources}
+                                  </div>
+                                  <div style={{ fontSize: '0.8rem', color: '#888', marginTop: '2px' }}>
+                                    ⏱️ 需要 {task.duration} 回合 | ⏰ {task.remaining_turns}回合后失效
+                                  </div>
+                                  {task.assigned_to.length > 0 && (
+                                    <div style={{ fontSize: '0.8rem', color: '#48bb78', marginTop: '4px' }}>
+                                      已有: {task.assigned_to.map(id => disciples.find(d => d.id === id)?.name).filter(Boolean).join('、')}
+                                    </div>
+                                  )}
+                                  <div style={{
+                                    marginTop: '6px',
+                                    padding: '6px 12px',
+                                    backgroundColor: '#fed7d7',
+                                    color: '#c53030',
+                                    borderRadius: '4px',
+                                    fontSize: '0.85rem',
+                                    fontWeight: 'bold',
+                                    textAlign: 'center'
+                                  }}>
+                                    🚫 {status.reason}
+                                  </div>
+                                </div>
+                              );
+                            })}
                           </div>
                         );
                       })()}
