@@ -70,6 +70,7 @@ pub fn create_router() -> Router {
         .route("/api/game/:game_id/tasks/:task_id/assign", post(assign_task))
         .route("/api/game/:game_id/tasks/:task_id/assign", delete(unassign_task))
         .route("/api/game/:game_id/tasks/auto-assign", post(auto_assign_tasks))
+        .route("/api/game/:game_id/tasks/check-eligibility", post(check_task_eligibility))
 
         // 统计信息
         .route("/api/game/:game_id/statistics", get(get_statistics))
@@ -250,24 +251,13 @@ async fn start_turn(
 
                 // 提取敌人信息（如果是战斗任务）
                 let enemy_info = if let crate::task::TaskType::Combat(combat_task) = &task.task_type {
-                    // 从enemy_name中提取ID和名称（格式："{名称}#{ID}"）
-                    let enemy_name_full = &combat_task.enemy_name;
-                    if let Some(pos) = enemy_name_full.rfind('#') {
-                        let enemy_name = enemy_name_full[..pos].to_string();
-                        let enemy_id = format!("monster_{}", &enemy_name_full[pos+1..]);
-                        Some(EnemyInfo {
-                            enemy_id,
-                            enemy_name,
-                            enemy_level: combat_task.enemy_level,
-                        })
-                    } else {
-                        // 如果没有ID，只返回名称
-                        Some(EnemyInfo {
-                            enemy_id: "unknown".to_string(),
-                            enemy_name: enemy_name_full.clone(),
-                            enemy_level: combat_task.enemy_level,
-                        })
-                    }
+                    Some(EnemyInfo {
+                        enemy_id: combat_task.enemy_id
+                            .map(|id| format!("monster_{}", id))
+                            .unwrap_or_else(|| "faction".to_string()),
+                        enemy_name: combat_task.enemy_name.clone(),
+                        enemy_level: combat_task.enemy_level,
+                    })
                 } else {
                     None
                 };
@@ -340,14 +330,53 @@ async fn end_turn(
     if let Some(game_mutex) = store.get_game(&game_id) {
         let mut game = game_mutex.lock().await;
 
-        // 执行任务
-        game.execute_turn();
+        // 执行任务并收集结果
+        let task_results = game.execute_turn();
 
         // 检查游戏状态
         let _is_running = game.check_game_state();
 
+        // 转换任务结果为DTO
+        let results: Vec<TaskResultDto> = task_results
+            .iter()
+            .map(|result| {
+                // 获取弟子名称
+                let disciple_name = game.sect.disciples
+                    .iter()
+                    .find(|d| d.id == result.disciple_id)
+                    .map(|d| d.name.clone())
+                    .unwrap_or_else(|| "未知弟子".to_string());
+
+                let message = if result.success {
+                    format!("{} 成功完成任务！获得修为+{}, 资源+{}, 声望+{}",
+                        disciple_name,
+                        result.progress_gained,
+                        result.resources_gained,
+                        result.reputation_gained)
+                } else {
+                    format!("{} 执行任务失败", disciple_name)
+                };
+
+                TaskResultDto {
+                    task_id: result.task_id,
+                    disciple_id: result.disciple_id,
+                    success: result.success,
+                    rewards: if result.success {
+                        Some(TaskRewards {
+                            progress: result.progress_gained,
+                            resources: result.resources_gained,
+                            reputation: result.reputation_gained,
+                        })
+                    } else {
+                        None
+                    },
+                    message,
+                }
+            })
+            .collect();
+
         let response = TurnEndResponse {
-            results: vec![],
+            results,
             game_state: format!("{:?}", game.state),
         };
 
@@ -695,24 +724,13 @@ async fn get_tasks(
 
                 // 提取敌人信息（如果是战斗任务）
                 let enemy_info = if let crate::task::TaskType::Combat(combat_task) = &task.task_type {
-                    // 从enemy_name中提取ID和名称（格式："{名称}#{ID}"）
-                    let enemy_name_full = &combat_task.enemy_name;
-                    if let Some(pos) = enemy_name_full.rfind('#') {
-                        let enemy_name = enemy_name_full[..pos].to_string();
-                        let enemy_id = format!("monster_{}", &enemy_name_full[pos+1..]);
-                        Some(EnemyInfo {
-                            enemy_id,
-                            enemy_name,
-                            enemy_level: combat_task.enemy_level,
-                        })
-                    } else {
-                        // 如果没有ID，只返回名称
-                        Some(EnemyInfo {
-                            enemy_id: "unknown".to_string(),
-                            enemy_name: enemy_name_full.clone(),
-                            enemy_level: combat_task.enemy_level,
-                        })
-                    }
+                    Some(EnemyInfo {
+                        enemy_id: combat_task.enemy_id
+                            .map(|id| format!("monster_{}", id))
+                            .unwrap_or_else(|| "faction".to_string()),
+                        enemy_name: combat_task.enemy_name.clone(),
+                        enemy_level: combat_task.enemy_level,
+                    })
                 } else {
                     None
                 };
@@ -971,6 +989,112 @@ async fn auto_assign_tasks(
         (
             StatusCode::NOT_FOUND,
             Json(ApiResponse::<String>::error(
+                "GAME_NOT_FOUND".to_string(),
+                "游戏不存在".to_string(),
+            )),
+        )
+    }
+}
+
+/// 检查弟子是否可以接受任务
+async fn check_task_eligibility(
+    State(store): State<AppState>,
+    Path(game_id): Path<String>,
+    Json(request): Json<TaskEligibilityRequest>,
+) -> impl IntoResponse {
+    if let Some(game_mutex) = store.get_game(&game_id) {
+        let game = game_mutex.lock().await;
+
+        // 查找任务
+        let task = game.current_tasks.iter().find(|t| t.id == request.task_id);
+        if task.is_none() {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(ApiResponse::<TaskEligibilityResponse>::error(
+                    "TASK_NOT_FOUND".to_string(),
+                    "任务不存在".to_string(),
+                )),
+            );
+        }
+        let task = task.unwrap();
+
+        // 查找弟子
+        let disciple = game.sect.disciples.iter().find(|d| d.id == request.disciple_id);
+        if disciple.is_none() {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(ApiResponse::<TaskEligibilityResponse>::error(
+                    "DISCIPLE_NOT_FOUND".to_string(),
+                    "弟子不存在".to_string(),
+                )),
+            );
+        }
+        let disciple = disciple.unwrap();
+
+        // 检查弟子是否在任务位置
+        let is_at_position = if let Some(task_pos) = &task.position {
+            disciple.position.x == task_pos.x && disciple.position.y == task_pos.y
+        } else {
+            true // 无位置要求的任务默认在位置
+        };
+
+        // 检查弟子是否正在执行其他任务
+        let is_busy = game.task_assignments.iter()
+            .any(|a| a.disciple_ids.contains(&disciple.id));
+
+        // 检查弟子是否已分配到此任务
+        let is_already_assigned = game.task_assignments.iter()
+            .find(|a| a.task_id == task.id)
+            .map(|a| a.disciple_ids.contains(&disciple.id))
+            .unwrap_or(false);
+
+        // 当前任务已分配人数
+        let current_assigned_count = game.task_assignments.iter()
+            .find(|a| a.task_id == task.id)
+            .map(|a| a.disciple_ids.len())
+            .unwrap_or(0);
+
+        // 获取宗门modifiers
+        let sect_modifiers = game.sect.get_applicable_modifiers(disciple);
+
+        // 调用任务资格检查
+        let eligibility = task.check_eligibility(
+            disciple,
+            &sect_modifiers,
+            is_at_position,
+            is_busy,
+            is_already_assigned,
+            current_assigned_count,
+        );
+
+        // 计算战斗任务的成功率和等级信息
+        let is_combat = matches!(task.task_type, crate::task::TaskType::Combat(_));
+        let (success_rate, disciple_combat_level, enemy_level) = if is_combat {
+            let rate = task.calculate_combat_success_rate(disciple);
+            let disciple_lvl = crate::task::Task::calculate_disciple_combat_level(disciple);
+            let enemy_lvl = task.get_enemy_level();
+            (Some(rate), Some(disciple_lvl), enemy_lvl)
+        } else {
+            (None, None, None)
+        };
+
+        let response = TaskEligibilityResponse {
+            task_id: task.id,
+            task_name: task.name.clone(),
+            disciple_id: disciple.id,
+            disciple_name: disciple.name.clone(),
+            eligible: eligibility.eligible,
+            reason: eligibility.reason,
+            success_rate,
+            disciple_combat_level,
+            enemy_level,
+        };
+
+        (StatusCode::OK, Json(ApiResponse::ok(response)))
+    } else {
+        (
+            StatusCode::NOT_FOUND,
+            Json(ApiResponse::<TaskEligibilityResponse>::error(
                 "GAME_NOT_FOUND".to_string(),
                 "游戏不存在".to_string(),
             )),

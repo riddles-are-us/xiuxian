@@ -528,6 +528,27 @@ pub struct BuildBuildingResponse {
     pub effects_count: usize,
 }
 
+/// 任务资格检查请求
+#[derive(Debug, Deserialize)]
+pub struct TaskEligibilityRequest {
+    pub task_id: usize,
+    pub disciple_id: usize,
+}
+
+/// 任务资格检查响应
+#[derive(Debug, Serialize)]
+pub struct TaskEligibilityResponse {
+    pub task_id: usize,
+    pub task_name: String,
+    pub disciple_id: usize,
+    pub disciple_name: String,
+    pub eligible: bool,
+    pub reason: Option<String>,
+    pub success_rate: Option<f64>,  // 战斗任务的成功率 (0.0 - 1.0)
+    pub disciple_combat_level: Option<u32>,  // 弟子战斗等级
+    pub enemy_level: Option<u32>,  // 敌人等级
+}
+
 /// 招募弟子请求
 #[derive(Debug, Deserialize)]
 pub struct RecruitDiscipleRequest {

@@ -280,6 +280,44 @@ export interface MoveDiscipleResponse {
   collected_herb: CollectedHerbInfo | null;
 }
 
+// 任务资格检查响应
+export interface TaskEligibilityResponse {
+  task_id: number;
+  task_name: string;
+  disciple_id: number;
+  disciple_name: string;
+  eligible: boolean;
+  reason: string | null;
+  success_rate: number | null;  // 战斗任务的成功率 (0.0 - 1.0)
+  disciple_combat_level: number | null;  // 弟子战斗等级
+  enemy_level: number | null;  // 敌人等级
+}
+
+// 任务执行结果
+export interface TaskResultDto {
+  task_id: number;
+  disciple_id: number;
+  success: boolean;
+  rewards: {
+    progress: number;
+    resources: number;
+    reputation: number;
+  } | null;
+  message: string;
+}
+
+// 回合结束响应
+export interface TurnEndResponse {
+  results: TaskResultDto[];
+  game_state: string;
+}
+
+// 下一回合结果
+export interface NextTurnResult {
+  task_results: TaskResultDto[];
+  pending_recruitment: Disciple | null;
+}
+
 export const gameApi = {
   getVersion: async (): Promise<VersionInfo> => {
     const response = await axios.get(`${API_BASE}/version`);
@@ -352,14 +390,21 @@ export const gameApi = {
     return response.data.data;
   },
 
-  nextTurn: async (gameId: string) => {
-    // 先结束当前回合
-    await axios.post(`${API_BASE}/game/${gameId}/turn/end`, {
+  nextTurn: async (gameId: string): Promise<NextTurnResult> => {
+    // 先结束当前回合，获取任务执行结果
+    const endTurnResponse = await axios.post(`${API_BASE}/game/${gameId}/turn/end`, {
       assignments: []
     });
+    const turnEndData: TurnEndResponse = endTurnResponse.data.data;
+
     // 再开始新回合
     const response = await axios.post(`${API_BASE}/game/${gameId}/turn/start`);
-    return response.data.data;
+    const startTurnData = response.data.data;
+
+    return {
+      task_results: turnEndData.results,
+      pending_recruitment: startTurnData.pending_recruitment
+    };
   },
 
   getPillInventory: async (gameId: string): Promise<PillInventory> => {
@@ -424,6 +469,15 @@ export const gameApi = {
   refinePill: async (gameId: string, pillType: string): Promise<RefinePillResponse> => {
     const response = await axios.post(`${API_BASE}/game/${gameId}/refine`, {
       pill_type: pillType
+    });
+    return response.data.data;
+  },
+
+  // 检查弟子是否可以接受任务
+  checkTaskEligibility: async (gameId: string, taskId: number, discipleId: number): Promise<TaskEligibilityResponse> => {
+    const response = await axios.post(`${API_BASE}/game/${gameId}/tasks/check-eligibility`, {
+      task_id: taskId,
+      disciple_id: discipleId
     });
     return response.data.data;
   }

@@ -573,8 +573,8 @@ impl InteractiveGame {
         }
     }
 
-    /// 执行回合任务
-    pub fn execute_turn(&mut self) {
+    /// 执行回合任务，返回任务执行结果
+    pub fn execute_turn(&mut self) -> Vec<TaskResult> {
         if !self.is_web_mode {
             UI::clear_screen();
             UI::print_title("任务执行结果");
@@ -626,8 +626,12 @@ impl InteractiveGame {
             }
 
             // 为每个参与者执行任务
+            let mut task_succeeded = false;
             for &disciple_id in &disciple_ids {
                 let result = self.execute_single_task(disciple_id, task.clone());
+                if result.success {
+                    task_succeeded = true;
+                }
                 results.push(result);
             }
 
@@ -637,16 +641,24 @@ impl InteractiveGame {
 
             // 清除妖魔的任务关联和解锁移动
             self.map.clear_monster_task(task.id);
-            if task.name.contains("守卫") {
-                if let crate::task::TaskType::Combat(combat_task) = &task.task_type {
-                    self.map.unlock_monster_for_defense_task(&combat_task.enemy_name);
+
+            // 如果是战斗任务且成功，移除怪物
+            if let crate::task::TaskType::Combat(combat_task) = &task.task_type {
+                if let Some(enemy_id) = combat_task.enemy_id {
+                    if task_succeeded {
+                        // 讨伐成功，移除怪物
+                        self.map.remove_monster_by_id(enemy_id);
+                    } else if task.name.contains("守卫") {
+                        // 守卫任务失败，解锁怪物移动
+                        self.map.unlock_monster_by_id(enemy_id);
+                    }
                 }
             }
         }
 
         // 处理结果（资源和声望只计算一次，不重复）
         let mut processed_tasks: std::collections::HashSet<usize> = std::collections::HashSet::new();
-        for result in results {
+        for result in &results {
             if result.success && !processed_tasks.contains(&result.task_id) {
                 self.sect.add_resources(result.resources_gained);
                 self.sect.add_reputation(result.reputation_gained);
@@ -657,20 +669,25 @@ impl InteractiveGame {
         if !self.is_web_mode {
             UI::wait_for_enter("\n按回车键查看回合总结...");
         }
+
+        results
     }
 
     /// 执行单个任务
     fn execute_single_task(&mut self, disciple_id: usize, task: Task) -> TaskResult {
         let mut rng = rand::thread_rng();
-        let success = rng.gen_bool(0.8);
 
-        let disciple_name = self
-            .sect
-            .disciples
-            .iter()
-            .find(|d| d.id == disciple_id)
-            .map(|d| d.name.clone())
-            .unwrap_or_default();
+        // 获取弟子信息用于计算成功率
+        let disciple = self.sect.disciples.iter().find(|d| d.id == disciple_id);
+        let disciple_name = disciple.map(|d| d.name.clone()).unwrap_or_default();
+
+        // 根据任务类型计算成功率
+        let success_rate = if let Some(d) = disciple {
+            task.calculate_combat_success_rate(d)
+        } else {
+            0.8
+        };
+        let success = rng.gen_bool(success_rate);
 
         if success {
             if let Some(disciple) = self
@@ -825,14 +842,11 @@ impl InteractiveGame {
         // 遍历所有战斗任务
         for task in &mut self.current_tasks {
             if let crate::task::TaskType::Combat(combat_task) = &task.task_type {
-                // 从 enemy_name 中提取怪物ID（格式："{名称}#{ID}"）
-                if let Some(id_str) = combat_task.enemy_name.split('#').nth(1) {
-                    if let Ok(monster_id) = id_str.parse::<usize>() {
-                        // 查找怪物的当前位置
-                        if let Some(monster_pos) = self.map.get_monster_position(monster_id) {
-                            // 更新任务位置
-                            task.position = Some(monster_pos);
-                        }
+                // 使用 enemy_id 查找怪物位置
+                if let Some(enemy_id) = combat_task.enemy_id {
+                    if let Some(monster_pos) = self.map.get_monster_position(enemy_id) {
+                        // 更新任务位置
+                        task.position = Some(monster_pos);
                     }
                 }
             }

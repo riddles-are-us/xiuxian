@@ -88,29 +88,31 @@ function App() {
     if (!gameId) return;
     try {
       setLoading(true);
-      // 记录当前正在进行的任务
-      const currentTasks = tasks.filter(t => t.assigned_to.length > 0);
+      // 记录当前任务，用于查找任务名称
+      const currentTasksMap = new Map(tasks.map(t => [t.id, t]));
 
       const turnResult = await gameApi.nextTurn(gameId);
-      const newTasks = await gameApi.getTasks(gameId);
 
       // 检查是否有待招募弟子
       if (turnResult.pending_recruitment) {
         setPendingRecruitment(turnResult.pending_recruitment);
       }
 
-      // 检测已完成的任务
-      currentTasks.forEach(oldTask => {
-        const stillExists = newTasks.find(t => t.id === oldTask.id);
-        if (!stillExists || stillExists.assigned_to.length === 0) {
-          // 任务已完成
-          const assignedNames = oldTask.assigned_to
-            .map(id => disciples.find(d => d.id === id)?.name)
-            .filter(Boolean)
-            .join('、');
+      // 显示任务执行结果通知
+      turnResult.task_results.forEach(result => {
+        const task = currentTasksMap.get(result.task_id);
+        const taskName = task?.name || '未知任务';
+        const discipleName = disciples.find(d => d.id === result.disciple_id)?.name || '弟子';
+
+        if (result.success) {
           addNotification(
-            `✅ ${assignedNames || '弟子'} 完成了任务「${oldTask.name}」！获得修为+${oldTask.rewards.progress}`,
+            `✅ ${discipleName} 完成了任务「${taskName}」！获得修为+${result.rewards?.progress || 0}`,
             'success'
+          );
+        } else {
+          addNotification(
+            `❌ ${discipleName} 执行任务「${taskName}」失败`,
+            'error'
           );
         }
       });

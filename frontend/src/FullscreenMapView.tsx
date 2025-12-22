@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { MapData, MapElement, Disciple, Task, GameInfo, gameApi, Relationship, HerbInventoryResponse, PillRecipe, PillInventory } from './api/gameApi';
+import { MapData, MapElement, Disciple, Task, GameInfo, gameApi, Relationship, HerbInventoryResponse, PillRecipe, PillInventory, TaskEligibilityResponse } from './api/gameApi';
 import MapView from './MapView';
 import { getElementIcon, renderElementDetails } from './MapElementDetails';
 import BuildingTree from './BuildingTree';
@@ -53,6 +53,7 @@ const FullscreenMapView: React.FC<FullscreenMapViewProps> = ({
   const [moveError, setMoveError] = useState<string | null>(null);
   const [discipleRelationships, setDiscipleRelationships] = useState<Relationship[]>([]);
   const [showRelationships, setShowRelationships] = useState(false);
+  const [taskEligibilities, setTaskEligibilities] = useState<Map<number, TaskEligibilityResponse>>(new Map());
 
   // 从 localStorage 恢复待移动路径
   const loadPendingPaths = (): Map<number, {x: number, y: number}[]> => {
@@ -104,6 +105,51 @@ const FullscreenMapView: React.FC<FullscreenMapViewProps> = ({
       setShowRelationships(false);
     }
   }, [selectedMapDisciple, gameId]);
+
+  // 当选中弟子变化时，加载任务资格检查数据
+  useEffect(() => {
+    if (selectedMapDisciple && !selectedMapDisciple.current_task_info) {
+      // 找出弟子位置的任务
+      const monsterAtPosition = mapData?.elements.find(e =>
+        e.element_type === 'Monster' &&
+        e.position.x === selectedMapDisciple.position.x &&
+        e.position.y === selectedMapDisciple.position.y
+      );
+
+      const tasksAtPosition = tasks.filter(t => {
+        if (t.position &&
+            t.position.x === selectedMapDisciple.position.x &&
+            t.position.y === selectedMapDisciple.position.y) {
+          return true;
+        }
+        if (monsterAtPosition &&
+            monsterAtPosition.details.monster_id &&
+            t.enemy_info &&
+            t.enemy_info.enemy_id === monsterAtPosition.details.monster_id) {
+          return true;
+        }
+        return false;
+      });
+
+      // 批量获取任务资格
+      const fetchEligibilities = async () => {
+        const newEligibilities = new Map<number, TaskEligibilityResponse>();
+        for (const task of tasksAtPosition) {
+          try {
+            const result = await gameApi.checkTaskEligibility(gameId, task.id, selectedMapDisciple.id);
+            newEligibilities.set(task.id, result);
+          } catch (err) {
+            console.error('Failed to check eligibility for task', task.id, err);
+          }
+        }
+        setTaskEligibilities(newEligibilities);
+      };
+
+      fetchEligibilities();
+    } else {
+      setTaskEligibilities(new Map());
+    }
+  }, [selectedMapDisciple, tasks, gameId, mapData]);
 
   // 加载炼丹数据
   const loadAlchemyData = async () => {
@@ -1325,79 +1371,20 @@ const FullscreenMapView: React.FC<FullscreenMapViewProps> = ({
                         });
                         if (tasksAtPosition.length === 0) return null;
 
-                        // 判断弟子是否可以接受任务，返回原因
+                        // 判断弟子是否可以接受任务，使用后端API返回的结果
                         const getTaskStatus = (task: Task) => {
-                          if (task.assigned_to.includes(selectedMapDisciple.id)) {
-                            return { canAccept: false, reason: '已接受此任务' };
-                          }
-                          if (task.assigned_to.length >= task.max_participants) {
-                            return { canAccept: false, reason: '任务人数已满' };
-                          }
-                          if (task.suitable_disciples.free.includes(selectedMapDisciple.id)) {
-                            return { canAccept: true, reason: '' };
-                          }
-                          if (task.suitable_disciples.busy.includes(selectedMapDisciple.id)) {
-                            return { canAccept: false, reason: '需要完成当前任务' };
-                          }
-                          // 不在 free 也不在 busy，检查具体原因
-                          const reasons: string[] = [];
-
-                          // 检查位置是否匹配（防止数据不同步）
-                          if (task.position &&
-                              (task.position.x !== selectedMapDisciple.position.x ||
-                               task.position.y !== selectedMapDisciple.position.y)) {
-                            reasons.push(`弟子不在任务位置 (任务在${task.position.x},${task.position.y})`);
-                          }
-
-                          // 检查技能要求
-                          if (task.skill_required) {
-                            const hasSkill = selectedMapDisciple.talents.some(
-                              t => t.talent_type === task.skill_required
-                            );
-                            if (!hasSkill) {
-                              reasons.push(`需要技能: ${task.skill_required}`);
-                            }
-                          }
-
-                          // 检查精力
-                          if (selectedMapDisciple.energy < task.energy_cost) {
-                            reasons.push(`精力不足 (需${task.energy_cost}, 当前${selectedMapDisciple.energy})`);
-                          }
-
-                          // 检查体魄
-                          if (selectedMapDisciple.constitution < task.constitution_cost) {
-                            reasons.push(`体魄不足 (需${task.constitution_cost}, 当前${selectedMapDisciple.constitution})`);
-                          }
-
-                          // 检查战斗任务的修为要求
-                          if (task.task_type.startsWith('Combat') && task.enemy_info) {
-                            // 简化的修为等级映射
-                            const cultivationLevelMap: Record<string, number> = {
-                              '练气': 1, '筑基': 2, '金丹': 3, '元婴': 4,
-                              '化神': 5, '炼虚': 6, '合体': 7, '大乘': 8, '渡劫': 9
+                          const eligibility = taskEligibilities.get(task.id);
+                          if (eligibility) {
+                            return {
+                              canAccept: eligibility.eligible,
+                              reason: eligibility.reason || '',
+                              successRate: eligibility.success_rate,
+                              discipleLevel: eligibility.disciple_combat_level,
+                              enemyLevel: eligibility.enemy_level
                             };
-                            const discipleLevel = cultivationLevelMap[selectedMapDisciple.cultivation.level] || 1;
-                            if (discipleLevel < task.enemy_info.enemy_level) {
-                              reasons.push(`修为不足 (需等级${task.enemy_info.enemy_level}, 当前${selectedMapDisciple.cultivation.level}=${discipleLevel})`);
-                            }
                           }
-
-                          if (reasons.length > 0) {
-                            return { canAccept: false, reason: reasons.join('; ') };
-                          }
-
-                          // 如果没有发现具体原因，根据任务类型给出提示
-                          if (task.task_type.startsWith('Exploration')) {
-                            // 探索任务需要 修为等级*10 >= danger_level
-                            const cultivationLevelMap: Record<string, number> = {
-                              '练气': 1, '筑基': 2, '金丹': 3, '元婴': 4,
-                              '化神': 5, '炼虚': 6, '合体': 7, '大乘': 8, '渡劫': 9
-                            };
-                            const discipleLevel = cultivationLevelMap[selectedMapDisciple.cultivation.level] || 1;
-                            return { canAccept: false, reason: `探索任务可能修为不足 (当前${selectedMapDisciple.cultivation.level}=${discipleLevel})` };
-                          }
-
-                          return { canAccept: false, reason: '请刷新任务列表后重试' };
+                          // 如果API结果还没加载，返回加载中状态
+                          return { canAccept: false, reason: '检查中...', successRate: null, discipleLevel: null, enemyLevel: null };
                         };
 
                         const acceptableTasks = tasksAtPosition.filter(t => getTaskStatus(t).canAccept);
@@ -1415,58 +1402,79 @@ const FullscreenMapView: React.FC<FullscreenMapViewProps> = ({
                               📋 此位置的任务 ({tasksAtPosition.length})
                             </div>
                             {/* 可接受的任务 */}
-                            {acceptableTasks.map(task => (
-                              <div key={task.id} style={{
-                                padding: '8px',
-                                marginBottom: '6px',
-                                backgroundColor: 'white',
-                                borderRadius: '4px',
-                                border: '1px solid #c6f6d5'
-                              }}>
-                                <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>
-                                  <span style={{ color: '#718096', fontWeight: 'normal' }}>任务: </span>
-                                  {task.name}
-                                  {task.max_participants > 1 && (
-                                    <span style={{ marginLeft: '6px', fontSize: '0.8rem', color: '#667eea' }}>
-                                      👥 {task.assigned_to.length}/{task.max_participants}
-                                    </span>
-                                  )}
-                                </div>
-                                <div style={{ fontSize: '0.85rem', color: '#666' }}>
-                                  类型: {task.task_type.split('(')[0]}
-                                </div>
-                                <div style={{ fontSize: '0.85rem', color: '#666' }}>
-                                  奖励: 修为+{task.rewards.progress} 资源+{task.rewards.resources}
-                                </div>
-                                <div style={{ fontSize: '0.8rem', color: '#888', marginTop: '2px' }}>
-                                  消耗: 精力-{task.energy_cost} 体魄-{task.constitution_cost}
-                                </div>
-                                <div style={{ fontSize: '0.8rem', color: '#888', marginTop: '2px' }}>
-                                  ⏱️ 需要 {task.duration} 回合 | ⏰ {task.remaining_turns}回合后失效
-                                </div>
-                                {task.assigned_to.length > 0 && (
-                                  <div style={{ fontSize: '0.8rem', color: '#48bb78', marginTop: '4px' }}>
-                                    已有: {task.assigned_to.map(id => disciples.find(d => d.id === id)?.name).filter(Boolean).join('、')}
+                            {acceptableTasks.map(task => {
+                              const status = getTaskStatus(task);
+                              const isCombatTask = task.task_type.startsWith('Combat');
+                              const successRate = status.successRate;
+                              const successRateColor = successRate != null
+                                ? successRate >= 0.7 ? '#48bb78'
+                                : successRate >= 0.4 ? '#ed8936'
+                                : '#e53e3e'
+                                : '#666';
+
+                              return (
+                                <div key={task.id} style={{
+                                  padding: '8px',
+                                  marginBottom: '6px',
+                                  backgroundColor: 'white',
+                                  borderRadius: '4px',
+                                  border: '1px solid #c6f6d5'
+                                }}>
+                                  <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>
+                                    <span style={{ color: '#718096', fontWeight: 'normal' }}>任务: </span>
+                                    {task.name}
+                                    {task.max_participants > 1 && (
+                                      <span style={{ marginLeft: '6px', fontSize: '0.8rem', color: '#667eea' }}>
+                                        👥 {task.assigned_to.length}/{task.max_participants}
+                                      </span>
+                                    )}
                                   </div>
-                                )}
-                                <button
-                                  onClick={() => assignTask(task.id, selectedMapDisciple.id)}
-                                  style={{
-                                    marginTop: '6px',
-                                    padding: '6px 12px',
-                                    backgroundColor: '#48bb78',
-                                    color: 'white',
-                                    border: 'none',
-                                    borderRadius: '4px',
-                                    cursor: 'pointer',
-                                    fontSize: '0.85rem',
-                                    fontWeight: 'bold'
-                                  }}
-                                >
-                                  ✓ 接受任务
-                                </button>
-                              </div>
-                            ))}
+                                  <div style={{ fontSize: '0.85rem', color: '#666' }}>
+                                    类型: {task.task_type.split('(')[0]}
+                                  </div>
+                                  {isCombatTask && successRate != null && (
+                                    <div style={{ fontSize: '0.85rem', marginTop: '2px' }}>
+                                      <span style={{ color: successRateColor, fontWeight: 'bold' }}>
+                                        🎯 成功率: {Math.round(successRate * 100)}%
+                                      </span>
+                                      <span style={{ color: '#888', marginLeft: '8px', fontSize: '0.8rem' }}>
+                                        (弟子Lv{status.discipleLevel} vs 敌人Lv{status.enemyLevel})
+                                      </span>
+                                    </div>
+                                  )}
+                                  <div style={{ fontSize: '0.85rem', color: '#666' }}>
+                                    奖励: 修为+{task.rewards.progress} 资源+{task.rewards.resources}
+                                  </div>
+                                  <div style={{ fontSize: '0.8rem', color: '#888', marginTop: '2px' }}>
+                                    消耗: 精力-{task.energy_cost} 体魄-{task.constitution_cost}
+                                  </div>
+                                  <div style={{ fontSize: '0.8rem', color: '#888', marginTop: '2px' }}>
+                                    ⏱️ 需要 {task.duration} 回合 | ⏰ {task.remaining_turns}回合后失效
+                                  </div>
+                                  {task.assigned_to.length > 0 && (
+                                    <div style={{ fontSize: '0.8rem', color: '#48bb78', marginTop: '4px' }}>
+                                      已有: {task.assigned_to.map(id => disciples.find(d => d.id === id)?.name).filter(Boolean).join('、')}
+                                    </div>
+                                  )}
+                                  <button
+                                    onClick={() => assignTask(task.id, selectedMapDisciple.id)}
+                                    style={{
+                                      marginTop: '6px',
+                                      padding: '6px 12px',
+                                      backgroundColor: '#48bb78',
+                                      color: 'white',
+                                      border: 'none',
+                                      borderRadius: '4px',
+                                      cursor: 'pointer',
+                                      fontSize: '0.85rem',
+                                      fontWeight: 'bold'
+                                    }}
+                                  >
+                                    ✓ 接受任务
+                                  </button>
+                                </div>
+                              );
+                            })}
                             {/* 无法接受的任务 */}
                             {unacceptableTasks.map(task => {
                               const status = getTaskStatus(task);

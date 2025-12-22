@@ -2,6 +2,29 @@ use crate::disciple::TalentType;
 use crate::modifier::ModifierTarget;
 use crate::map::Position;
 
+/// 任务资格检查结果
+#[derive(Debug, Clone)]
+pub struct TaskEligibility {
+    pub eligible: bool,
+    pub reason: Option<String>,
+}
+
+impl TaskEligibility {
+    pub fn eligible() -> Self {
+        Self {
+            eligible: true,
+            reason: None,
+        }
+    }
+
+    pub fn ineligible(reason: &str) -> Self {
+        Self {
+            eligible: false,
+            reason: Some(reason.to_string()),
+        }
+    }
+}
+
 /// 任务类型
 #[derive(Debug, Clone)]
 pub enum TaskType {
@@ -22,7 +45,8 @@ pub struct GatheringTask {
 /// 战斗任务
 #[derive(Debug, Clone)]
 pub struct CombatTask {
-    pub enemy_name: String,
+    pub enemy_id: Option<usize>,  // 怪物唯一ID（None表示势力战斗，不需要移除）
+    pub enemy_name: String,       // 怪物名称（用于显示）
     pub enemy_level: u32,
     pub difficulty: u32,
 }
@@ -160,19 +184,10 @@ impl Task {
         sect_modifiers: &[&crate::modifier::Modifier],
     ) -> bool {
         match &self.task_type {
-            TaskType::Combat(combat) => {
-                // 1. 获取native修为等级
-                let native_level = disciple.cultivation.current_level as u32 as f32;
-
-                // 2. 应用TaskSuitability modifier获取effective等级（包含宗门modifiers）
-                let effective_level = disciple.modifiers.calculate_effective_with_extras(
-                    &ModifierTarget::TaskSuitability,
-                    native_level,
-                    sect_modifiers
-                ) as u32;
-
-                // 3. 检查战斗力是否足够
-                effective_level >= combat.enemy_level
+            TaskType::Combat(_) => {
+                // 战斗任务不再有等级限制，任何弟子都可以接受
+                // 成功率由等级差距决定
+                true
             }
             TaskType::Exploration(exploration) => {
                 // 1. 获取native修为等级
@@ -210,6 +225,99 @@ impl Task {
         }
     }
 
+    /// 检查弟子是否可以接受此任务，返回详细的结果和原因
+    pub fn check_eligibility(
+        &self,
+        disciple: &crate::disciple::Disciple,
+        sect_modifiers: &[&crate::modifier::Modifier],
+        is_at_position: bool,
+        is_busy: bool,
+        is_already_assigned: bool,
+        current_assigned_count: usize,
+    ) -> TaskEligibility {
+        // 1. 检查是否已分配
+        if is_already_assigned {
+            return TaskEligibility::ineligible("已接受此任务");
+        }
+
+        // 2. 检查任务人数是否已满
+        if current_assigned_count >= self.max_participants as usize {
+            return TaskEligibility::ineligible("任务人数已满");
+        }
+
+        // 3. 检查位置（如果任务有位置要求）
+        if self.position.is_some() && !is_at_position {
+            if let Some(pos) = &self.position {
+                return TaskEligibility::ineligible(&format!(
+                    "需要前往任务位置 ({}, {})",
+                    pos.x, pos.y
+                ));
+            }
+        }
+
+        // 4. 检查弟子是否正在执行其他任务
+        if is_busy {
+            return TaskEligibility::ineligible("正在执行其他任务");
+        }
+
+        // 5. 检查精力
+        if disciple.energy < self.energy_cost {
+            return TaskEligibility::ineligible(&format!(
+                "精力不足 (需要{}, 当前{})",
+                self.energy_cost, disciple.energy
+            ));
+        }
+
+        // 6. 检查体魄
+        if disciple.constitution < self.constitution_cost {
+            return TaskEligibility::ineligible(&format!(
+                "体魄不足 (需要{}, 当前{})",
+                self.constitution_cost, disciple.constitution
+            ));
+        }
+
+        // 7. 检查任务类型特定条件
+        match &self.task_type {
+            TaskType::Combat(_) => {
+                // 战斗任务不再有等级限制，成功率由等级差距决定
+                // 在 check_eligibility 中允许接受任务
+            }
+            TaskType::Exploration(exploration) => {
+                let native_level = disciple.cultivation.current_level as u32 as f32;
+                let effective_level = disciple.modifiers.calculate_effective_with_extras(
+                    &ModifierTarget::TaskSuitability,
+                    native_level,
+                    sect_modifiers
+                ) as u32;
+
+                if effective_level * 10 < exploration.danger_level {
+                    let required_level = (exploration.danger_level + 9) / 10; // 向上取整
+                    return TaskEligibility::ineligible(&format!(
+                        "修为不足以应对危险 (危险等级{}, 需要约{}级, 当前{:?}={})",
+                        exploration.danger_level,
+                        required_level,
+                        disciple.cultivation.current_level,
+                        native_level as u32
+                    ));
+                }
+            }
+            TaskType::Auxiliary(auxiliary) => {
+                if let Some(ref skill) = auxiliary.skill_required {
+                    let has_skill = disciple.talents.iter().any(|t| &t.talent_type == skill);
+                    if !has_skill {
+                        return TaskEligibility::ineligible(&format!(
+                            "需要技能: {:?}",
+                            skill
+                        ));
+                    }
+                }
+            }
+            _ => {}
+        }
+
+        TaskEligibility::eligible()
+    }
+
     /// 获取任务类型的字符串表示（用于比较）
     pub fn get_task_type_str(&self) -> &'static str {
         match &self.task_type {
@@ -218,6 +326,64 @@ impl Task {
             TaskType::Exploration(_) => "Exploration",
             TaskType::Auxiliary(_) => "Auxiliary",
             TaskType::Investment(_) => "Investment",
+        }
+    }
+
+    /// 计算弟子的有效战斗等级
+    /// 等级 = 大境界 × 4 + 小境界 + 1
+    /// 练气初期=1, 中期=2, 圆满=3
+    /// 筑基初期=5, 中期=6, 圆满=7 (渡劫+2)
+    /// 金丹初期=9, 中期=10, 圆满=11
+    pub fn calculate_disciple_combat_level(disciple: &crate::disciple::Disciple) -> u32 {
+        use crate::cultivation::SubLevel;
+
+        let major_level = disciple.cultivation.current_level as u32;
+        let sub_level = match disciple.cultivation.sub_level {
+            SubLevel::Early => 0,
+            SubLevel::Middle => 1,
+            SubLevel::Perfect => 2,
+        };
+
+        // 每个大境界贡献4级（3个小境界 + 渡劫跳2级 - 1）
+        major_level * 4 + sub_level + 1
+    }
+
+    /// 计算战斗任务的成功率
+    /// 基于弟子等级和敌人等级的差距
+    /// 返回 0.0 到 1.0 之间的概率
+    pub fn calculate_combat_success_rate(&self, disciple: &crate::disciple::Disciple) -> f64 {
+        match &self.task_type {
+            TaskType::Combat(combat) => {
+                let disciple_level = Self::calculate_disciple_combat_level(disciple);
+                let enemy_level = combat.enemy_level;
+
+                // 等级差 = 弟子等级 - 敌人等级
+                // 正数表示弟子更强，负数表示敌人更强
+                let level_diff = disciple_level as i32 - enemy_level as i32;
+
+                // 基础成功率 70%
+                // 每高一级 +10%，每低一级 -15%
+                // 最低 5%，最高 95%
+                let base_rate = 0.7;
+                let rate = if level_diff >= 0 {
+                    // 弟子等级 >= 敌人等级
+                    base_rate + (level_diff as f64 * 0.10)
+                } else {
+                    // 弟子等级 < 敌人等级
+                    base_rate + (level_diff as f64 * 0.15)
+                };
+
+                rate.clamp(0.05, 0.95)
+            }
+            _ => 0.8, // 非战斗任务默认 80% 成功率
+        }
+    }
+
+    /// 获取战斗任务的敌人等级
+    pub fn get_enemy_level(&self) -> Option<u32> {
+        match &self.task_type {
+            TaskType::Combat(combat) => Some(combat.enemy_level),
+            _ => None,
         }
     }
 

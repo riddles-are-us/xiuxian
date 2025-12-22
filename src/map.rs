@@ -243,6 +243,7 @@ impl Faction {
             for (i, template) in self.hostile_task_templates.iter().enumerate() {
                 let task_type = match template.task_type.as_str() {
                     "Combat" => TaskType::Combat(CombatTask {
+                        enemy_id: None,  // Faction战斗不需要移除
                         enemy_name: self.name.clone(),
                         enemy_level: self.power_level,
                         difficulty: template.difficulty.unwrap_or(self.power_level),
@@ -499,12 +500,13 @@ impl Monster {
 
     fn generate_task_from_template(&self, task_id: usize, template: &TaskTemplateConfig) -> Option<Task> {
         // 在任务名称中包含妖魔ID，确保唯一性
-        let display_name = format!("{}#{}", self.name, self.id);
-        let name = template.name_template.replace("{name}", &display_name);
+        let task_display_name = format!("{}#{}", self.name, self.id);
+        let name = template.name_template.replace("{name}", &task_display_name);
 
         let task_type = match template.task_type.as_str() {
             "Combat" => TaskType::Combat(CombatTask {
-                enemy_name: display_name,
+                enemy_id: Some(self.id),
+                enemy_name: self.name.clone(),
                 enemy_level: self.level,
                 difficulty: template.difficulty.unwrap_or(self.level),
             }),
@@ -1063,7 +1065,8 @@ impl GameMap {
                                 task_id,
                                 task_name,
                                 crate::task::TaskType::Combat(crate::task::CombatTask {
-                                    enemy_name: format!("{}#{}", monster.name, monster.id),
+                                    enemy_id: Some(monster.id),
+                                    enemy_name: monster.name.clone(),
                                     enemy_level: monster.level,
                                     difficulty: monster.level,
                                 }),
@@ -1144,6 +1147,29 @@ impl GameMap {
         None
     }
 
+    /// 移除指定ID的怪物（当讨伐任务成功时调用）
+    pub fn remove_monster_by_id(&mut self, monster_id: usize) {
+        self.elements.retain(|positioned| {
+            if let MapElement::Monster(monster) = &positioned.element {
+                monster.id != monster_id
+            } else {
+                true
+            }
+        });
+    }
+
+    /// 解锁指定ID怪物的移动（当守卫任务完成或失效时调用）
+    pub fn unlock_monster_by_id(&mut self, monster_id: usize) {
+        for positioned in &mut self.elements {
+            if let MapElement::Monster(monster) = &mut positioned.element {
+                if monster.id == monster_id {
+                    monster.has_active_defense_task = false;
+                    return;
+                }
+            }
+        }
+    }
+
     /// 检查所有守卫任务，移除那些妖魔已离开的任务
     /// 返回需要移除的任务ID列表
     pub fn check_defense_tasks_validity(&self, current_tasks: &[crate::task::Task]) -> Vec<usize> {
@@ -1205,6 +1231,7 @@ fn parse_task_type(template: &TaskTemplateConfig) -> Option<TaskType> {
             difficulty: template.difficulty.unwrap_or(1),
         })),
         "Combat" => Some(TaskType::Combat(CombatTask {
+            enemy_id: None,  // 需要在调用处替换
             enemy_name: "未知敌人".to_string(), // 需要在调用处替换
             enemy_level: template.difficulty.unwrap_or(1),
             difficulty: template.difficulty.unwrap_or(1),
