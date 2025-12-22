@@ -10,6 +10,8 @@ interface MapViewProps {
   onElementSelected?: (element: MapElement | null) => void;
   onDiscipleSelected?: (disciple: Disciple | null) => void;
   onMoveError?: (error: string | null) => void;
+  onLongDistanceMove?: (disciple: Disciple, targetX: number, targetY: number) => void;  // 远距离移动
+  pendingPaths?: Map<number, {x: number, y: number}[]>;  // 待移动路径
   // 地图平移相关
   transform?: { x: number; y: number };
   onMapMouseDown?: (e: React.MouseEvent) => void;
@@ -24,6 +26,8 @@ const MapView: React.FC<MapViewProps> = ({
   onElementSelected,
   onDiscipleSelected,
   onMoveError,
+  onLongDistanceMove,
+  pendingPaths,
   transform,
   onMapMouseDown,
   isPanning
@@ -109,10 +113,15 @@ const MapView: React.FC<MapViewProps> = ({
         return;
       }
 
-      // 不在范围内且没有弟子，显示错误
-      const distance = getManhattanDistance(selectedDisciple.position.x, selectedDisciple.position.y, x, y);
-      const error = `移动距离(${distance})超出范围！${selectedDisciple.name}的最大移动距离为${selectedDisciple.movement_range}格`;
-      onMoveError?.(error);
+      // 不在范围内且没有弟子，尝试远距离移动（自动规划路径）
+      if (onLongDistanceMove) {
+        onLongDistanceMove(selectedDisciple, x, y);
+      } else {
+        // 如果没有远距离移动回调，显示错误
+        const distance = getManhattanDistance(selectedDisciple.position.x, selectedDisciple.position.y, x, y);
+        const error = `移动距离(${distance})超出范围！${selectedDisciple.name}的最大移动距离为${selectedDisciple.movement_range}格`;
+        onMoveError?.(error);
+      }
       return;
     }
 
@@ -391,6 +400,21 @@ const MapView: React.FC<MapViewProps> = ({
               const underAttack = element?.details?.under_attack;
               const isInvading = element?.element_type === 'Monster' && element?.details?.invading_location;
 
+              // 检查是否在待移动路径上
+              let isPendingPath = false;
+              let isPathDestination = false;
+              if (pendingPaths) {
+                const pathEntries = Array.from(pendingPaths.values());
+                for (const path of pathEntries) {
+                  const pathIndex = path.findIndex(p => p.x === x && p.y === y);
+                  if (pathIndex >= 0) {
+                    isPendingPath = true;
+                    isPathDestination = pathIndex === path.length - 1;
+                    break;
+                  }
+                }
+              }
+
               return (
                 <div
                   key={`${x}-${y}`}
@@ -401,15 +425,19 @@ const MapView: React.FC<MapViewProps> = ({
                   title={element ? element.name : `(${x}, ${y})`}
                   style={{
                     border: isSelected ? '3px solid #4299e1' :
+                            isPathDestination ? '3px dashed #f59e0b' :
+                            isPendingPath ? '2px dashed #f59e0b' :
                             underAttack ? `2px solid ${underAttack.is_demon ? '#c53030' : '#ed8936'}` :
                             isInvading ? '2px solid #fc8181' : undefined,
                     boxShadow: isSelected ? '0 0 15px #4299e1' :
+                               isPathDestination ? '0 0 10px #f59e0b' :
                                underAttack ? `0 0 10px ${underAttack.is_demon ? '#c53030' : '#ed8936'}` :
                                isInvading ? '0 0 10px #fc8181' : undefined,
-                    backgroundColor: isInRange && !isSelected ? 'rgba(66, 153, 225, 0.2)' :
+                    backgroundColor: isPendingPath ? 'rgba(245, 158, 11, 0.3)' :
+                                     isInRange && !isSelected ? 'rgba(66, 153, 225, 0.2)' :
                                      isOutOfRange ? 'rgba(0, 0, 0, 0.3)' : undefined,
-                    cursor: selectedDisciple ? (isInRange ? 'pointer' : 'not-allowed') : (disciplesHere.length > 0 || element) ? 'pointer' : 'default',
-                    opacity: isOutOfRange ? 0.5 : 1
+                    cursor: selectedDisciple ? (isInRange || !isOutOfRange ? 'pointer' : 'pointer') : (disciplesHere.length > 0 || element) ? 'pointer' : 'default',
+                    opacity: isOutOfRange && !isPendingPath ? 0.5 : 1
                   }}
                 >
                   {element && (

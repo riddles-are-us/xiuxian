@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { MapData, MapElement, Disciple, Task, GameInfo, gameApi, Relationship, HerbInventoryResponse, PillRecipe } from './api/gameApi';
+import { MapData, MapElement, Disciple, Task, GameInfo, gameApi, Relationship, HerbInventoryResponse, PillRecipe, PillInventory } from './api/gameApi';
 import MapView from './MapView';
 import { getElementIcon, renderElementDetails } from './MapElementDetails';
 import BuildingTree from './BuildingTree';
@@ -20,7 +20,7 @@ interface FullscreenMapViewProps {
   onMapPositionChange: (pos: { x: number; y: number }) => void;
 }
 
-type PanelType = 'disciples' | 'tasks' | 'mapinfo' | 'buildings' | 'alchemy' | null;
+type PanelType = 'disciples' | 'tasks' | 'mapinfo' | 'buildings' | 'alchemy' | 'pills' | null;
 
 const FullscreenMapView: React.FC<FullscreenMapViewProps> = ({
   mapData,
@@ -37,13 +37,15 @@ const FullscreenMapView: React.FC<FullscreenMapViewProps> = ({
   onMapPositionChange
 }) => {
   const [activePanel, setActivePanel] = useState<PanelType>(null);
-  const [panelTab, setPanelTab] = useState<'disciples' | 'tasks' | 'mapinfo' | 'buildings' | 'alchemy'>('disciples');
+  const [panelTab, setPanelTab] = useState<'disciples' | 'tasks' | 'mapinfo' | 'buildings' | 'alchemy' | 'pills'>('disciples');
 
   // 炼丹相关状态
   const [herbInventory, setHerbInventory] = useState<HerbInventoryResponse | null>(null);
   const [recipes, setRecipes] = useState<PillRecipe[]>([]);
+  const [pillInventory, setPillInventory] = useState<PillInventory | null>(null);
   const [alchemyLoading, setAlchemyLoading] = useState(false);
   const [alchemyMessage, setAlchemyMessage] = useState<{text: string, type: 'success' | 'error'} | null>(null);
+  const [selectedPillDisciple, setSelectedPillDisciple] = useState<number | null>(null);
 
   // 地图信息状态
   const [selectedElement, setSelectedElement] = useState<MapElement | null>(null);
@@ -51,6 +53,35 @@ const FullscreenMapView: React.FC<FullscreenMapViewProps> = ({
   const [moveError, setMoveError] = useState<string | null>(null);
   const [discipleRelationships, setDiscipleRelationships] = useState<Relationship[]>([]);
   const [showRelationships, setShowRelationships] = useState(false);
+
+  // 从 localStorage 恢复待移动路径
+  const loadPendingPaths = (): Map<number, {x: number, y: number}[]> => {
+    try {
+      const saved = localStorage.getItem(`pendingPaths_${gameId}`);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return new Map(parsed);
+      }
+    } catch (e) {
+      console.error('Failed to load pending paths:', e);
+    }
+    return new Map();
+  };
+
+  // 保存待移动路径到 localStorage
+  const savePendingPaths = (paths: Map<number, {x: number, y: number}[]>) => {
+    try {
+      const serialized = Array.from(paths.entries());
+      localStorage.setItem(`pendingPaths_${gameId}`, JSON.stringify(serialized));
+    } catch (e) {
+      console.error('Failed to save pending paths:', e);
+    }
+  };
+
+  // 待移动路径状态：记录每个弟子的剩余移动路径
+  const [pendingPaths, setPendingPaths] = useState<Map<number, {x: number, y: number}[]>>(() => loadPendingPaths());
+  // 使用 ref 备份路径数据
+  const pendingPathsRef = useRef<Map<number, {x: number, y: number}[]>>(loadPendingPaths());
 
   // 当 disciples 数据更新时，同步更新选中的弟子状态
   useEffect(() => {
@@ -78,12 +109,14 @@ const FullscreenMapView: React.FC<FullscreenMapViewProps> = ({
   const loadAlchemyData = async () => {
     try {
       setAlchemyLoading(true);
-      const [herbData, recipeData] = await Promise.all([
+      const [herbData, recipeData, pillData] = await Promise.all([
         gameApi.getHerbInventory(gameId),
-        gameApi.getRecipes(gameId)
+        gameApi.getRecipes(gameId),
+        gameApi.getPillInventory(gameId)
       ]);
       setHerbInventory(herbData);
       setRecipes(recipeData);
+      setPillInventory(pillData);
     } catch (err) {
       console.error('Failed to load alchemy data:', err);
     } finally {
@@ -91,9 +124,33 @@ const FullscreenMapView: React.FC<FullscreenMapViewProps> = ({
     }
   };
 
-  // 当切换到炼丹 tab 时加载数据
+  // 使用丹药
+  const handleUsePill = async (pillType: string, discipleId: number) => {
+    try {
+      setAlchemyLoading(true);
+      const result = await gameApi.usePill(gameId, discipleId, pillType);
+      setAlchemyMessage({
+        text: result.message,
+        type: result.success ? 'success' : 'error'
+      });
+      await loadAlchemyData();
+      // 刷新弟子数据
+      await onDiscipleMoved(discipleId);
+      setTimeout(() => setAlchemyMessage(null), 3000);
+    } catch (err: any) {
+      setAlchemyMessage({
+        text: err.response?.data?.error?.message || err.message || '使用丹药失败',
+        type: 'error'
+      });
+      setTimeout(() => setAlchemyMessage(null), 3000);
+    } finally {
+      setAlchemyLoading(false);
+    }
+  };
+
+  // 当切换到炼丹或丹药 tab 时加载数据
   useEffect(() => {
-    if (panelTab === 'alchemy') {
+    if (panelTab === 'alchemy' || panelTab === 'pills') {
       loadAlchemyData();
     }
   }, [panelTab, gameId]);
@@ -132,23 +189,284 @@ const FullscreenMapView: React.FC<FullscreenMapViewProps> = ({
     }
   };
 
+  // 计算从起点到终点的简单曼哈顿路径（一步一格）
+  const calculatePath = (
+    startX: number, startY: number,
+    endX: number, endY: number
+  ): {x: number, y: number}[] => {
+    const path: {x: number, y: number}[] = [];
+    let currentX = startX;
+    let currentY = startY;
+
+    // 先走X方向，再走Y方向（简单的L形路径）
+    while (currentX !== endX) {
+      currentX += currentX < endX ? 1 : -1;
+      path.push({ x: currentX, y: currentY });
+    }
+    while (currentY !== endY) {
+      currentY += currentY < endY ? 1 : -1;
+      path.push({ x: currentX, y: currentY });
+    }
+
+    return path;
+  };
+
+  // 执行路径移动（移动尽可能多的步数，返回剩余路径）
+  const executePathMove = async (
+    discipleId: number,
+    path: {x: number, y: number}[],
+    movesRemaining: number
+  ): Promise<{x: number, y: number}[]> => {
+    let stepsToMove = Math.min(path.length, movesRemaining);
+    let currentStep = 0;
+
+    while (currentStep < stepsToMove) {
+      const target = path[currentStep];
+      try {
+        await gameApi.moveDisciple(gameId, discipleId, target.x, target.y);
+        currentStep++;
+      } catch (error: any) {
+        // 如果移动失败（可能是moves用完了），停止移动
+        console.log('Move stopped:', error.response?.data?.error?.message);
+        break;
+      }
+    }
+
+    // 返回剩余的路径
+    return path.slice(currentStep);
+  };
+
+  // 处理远距离移动请求
+  const handleLongDistanceMove = async (
+    disciple: Disciple,
+    targetX: number,
+    targetY: number
+  ) => {
+    // 计算完整路径
+    const fullPath = calculatePath(
+      disciple.position.x, disciple.position.y,
+      targetX, targetY
+    );
+
+    if (fullPath.length === 0) return;
+
+    // 执行移动
+    const remainingPath = await executePathMove(
+      disciple.id,
+      fullPath,
+      disciple.moves_remaining
+    );
+
+    // 保存剩余路径（同时更新 state、ref 和 localStorage）
+    if (remainingPath.length > 0) {
+      setPendingPaths(prev => {
+        const newMap = new Map(prev);
+        newMap.set(disciple.id, remainingPath);
+        pendingPathsRef.current = newMap;
+        savePendingPaths(newMap);
+        return newMap;
+      });
+      setMoveError(`移动距离不足，已规划路径，下回合将自动继续移动 (剩余${remainingPath.length}格)`);
+    } else {
+      // 移动完成，清除待移动路径
+      setPendingPaths(prev => {
+        const newMap = new Map(prev);
+        newMap.delete(disciple.id);
+        pendingPathsRef.current = newMap;
+        savePendingPaths(newMap);
+        return newMap;
+      });
+    }
+
+    // 刷新弟子数据
+    await onDiscipleMoved(disciple.id);
+  };
+
+  // 取消弟子的待移动路径
+  const cancelPendingPath = (discipleId: number) => {
+    setPendingPaths(prev => {
+      const newMap = new Map(prev);
+      newMap.delete(discipleId);
+      pendingPathsRef.current = newMap;
+      savePendingPaths(newMap);
+      return newMap;
+    });
+    setMoveError(null);
+  };
+
+  // 获取弟子的待移动路径
+  const getPendingPath = (discipleId: number): {x: number, y: number}[] => {
+    return pendingPaths.get(discipleId) || [];
+  };
+
+  // 标记是否需要在下次数据刷新后续行（从 localStorage 恢复）
+  const loadShouldContinue = (): boolean => {
+    try {
+      const saved = localStorage.getItem(`shouldContinuePaths_${gameId}`);
+      return saved === 'true';
+    } catch (e) {
+      return false;
+    }
+  };
+  const saveShouldContinue = (value: boolean) => {
+    try {
+      localStorage.setItem(`shouldContinuePaths_${gameId}`, value ? 'true' : 'false');
+    } catch (e) {
+      console.error('Failed to save shouldContinue:', e);
+    }
+  };
+  const shouldContinuePathsRef = useRef(loadShouldContinue());
+  // 防止重复执行的标记（也需要持久化）
+  const loadIsProcessing = (): boolean => {
+    try {
+      return localStorage.getItem(`isProcessingPaths_${gameId}`) === 'true';
+    } catch (e) {
+      return false;
+    }
+  };
+  const saveIsProcessing = (value: boolean) => {
+    try {
+      localStorage.setItem(`isProcessingPaths_${gameId}`, value ? 'true' : 'false');
+    } catch (e) {
+      console.error('Failed to save isProcessing:', e);
+    }
+  };
+  const isProcessingPathsRef = useRef(loadIsProcessing());
+
+  // 同步更新 pendingPaths state 和 ref，并保存到 localStorage
+  const updatePendingPaths = (updater: (prev: Map<number, {x: number, y: number}[]>) => Map<number, {x: number, y: number}[]>) => {
+    setPendingPaths(prev => {
+      const newMap = updater(prev);
+      pendingPathsRef.current = newMap;
+      savePendingPaths(newMap);
+      return newMap;
+    });
+  };
+
+  // 组件挂载时，从 localStorage 同步 refs（处理组件重新挂载的情况）
+  useEffect(() => {
+    const loadedPaths = loadPendingPaths();
+    const loadedShouldContinue = loadShouldContinue();
+    let loadedIsProcessing = loadIsProcessing();
+
+    // 如果上次处理中断了（isProcessing = true 但组件已重新挂载），重置状态
+    // 这允许continuation effect 重新尝试
+    if (loadedIsProcessing && loadedShouldContinue && loadedPaths.size > 0) {
+      console.log('检测到上次处理中断，重置 isProcessing');
+      loadedIsProcessing = false;
+      saveIsProcessing(false);
+    }
+
+    pendingPathsRef.current = loadedPaths;
+    shouldContinuePathsRef.current = loadedShouldContinue;
+    isProcessingPathsRef.current = loadedIsProcessing;
+    setPendingPaths(loadedPaths);
+    console.log('组件挂载，从localStorage恢复: shouldContinue:', loadedShouldContinue, 'paths:', loadedPaths.size, 'isProcessing:', loadedIsProcessing);
+  }, [gameId]);
+
+  // 当弟子数据更新时，检查是否需要续行
+  useEffect(() => {
+    console.log('disciples 更新, shouldContinue:', shouldContinuePathsRef.current, 'pathsSize:', pendingPathsRef.current.size, 'isProcessing:', isProcessingPathsRef.current);
+
+    // 如果正在处理中，跳过
+    if (isProcessingPathsRef.current) {
+      console.log('正在处理中，跳过');
+      return;
+    }
+
+    if (shouldContinuePathsRef.current && pendingPathsRef.current.size > 0) {
+      // 检查弟子移动力是否已恢复（确认是新回合）
+      const firstPathEntry = Array.from(pendingPathsRef.current.entries())[0];
+      if (firstPathEntry) {
+        const disciple = disciples.find(d => d.id === firstPathEntry[0]);
+        console.log('检查弟子移动力:', disciple?.moves_remaining);
+
+        // 如果移动力为0，说明数据还没刷新，等待下次更新
+        if (disciple && disciple.moves_remaining === 0) {
+          console.log('移动力为0，等待数据刷新');
+          return;
+        }
+      }
+
+      // 设置处理中标记（防止重复执行）
+      isProcessingPathsRef.current = true;
+      saveIsProcessing(true);
+
+      // 从 ref 恢复路径数据
+      const pathsToProcess = new Map(pendingPathsRef.current);
+      console.log('开始续行移动，待处理路径数:', pathsToProcess.size);
+
+      // 执行移动（注意：只有在完成后才清除 shouldContinue）
+      (async () => {
+        try {
+          const entries = Array.from(pathsToProcess.entries());
+          for (const [discipleId, path] of entries) {
+            const disciple = disciples.find(d => d.id === discipleId);
+            console.log(`弟子 ${discipleId} 移动力: ${disciple?.moves_remaining}, 路径长度: ${path.length}`);
+
+            if (!disciple || path.length === 0) continue;
+            if (disciple.current_task_info) {
+              // 弟子正在执行任务，清除其路径
+              const newMap = new Map(pendingPathsRef.current);
+              newMap.delete(discipleId);
+              pendingPathsRef.current = newMap;
+              savePendingPaths(newMap);
+              setPendingPaths(newMap);
+              continue;
+            }
+
+            // 执行移动
+            const remainingPath = await executePathMove(
+              discipleId,
+              path,
+              disciple.moves_remaining
+            );
+
+            // 更新剩余路径（直接操作 ref 和 localStorage，确保持久化）
+            const newMap = new Map(pendingPathsRef.current);
+            if (remainingPath.length > 0) {
+              newMap.set(discipleId, remainingPath);
+            } else {
+              newMap.delete(discipleId);
+            }
+            pendingPathsRef.current = newMap;
+            savePendingPaths(newMap);
+            setPendingPaths(newMap);
+
+            // 刷新弟子数据
+            await onDiscipleMoved(discipleId);
+          }
+          console.log('续行移动完成');
+
+          // 移动完成后，清除续行标记
+          shouldContinuePathsRef.current = false;
+          saveShouldContinue(false);
+        } finally {
+          isProcessingPathsRef.current = false;
+          saveIsProcessing(false);
+        }
+      })();
+    }
+  }, [disciples]);
+
+  // 处理下一回合，包含自动续行逻辑
+  const handleNextTurnWithPaths = () => {
+    // 标记需要续行（使用 ref 和 localStorage 确保不会丢失）
+    if (pendingPathsRef.current.size > 0) {
+      shouldContinuePathsRef.current = true;
+      saveShouldContinue(true);
+      console.log('标记续行，路径数:', pendingPathsRef.current.size);
+    }
+    // 调用原始的 onNextTurn（开始新回合）
+    onNextTurn();
+  };
+
   // 地图拖拽平移状态 - 使用 transform 而不是 scroll
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
   // mapPosition 现在由父组件管理，不再使用本地 state
   const savedMapPosition = useRef({ x: 0, y: 0 }); // 用于拖拽开始时保存位置
-
-  const togglePanel = (panel: PanelType) => {
-    if (activePanel === panel) {
-      setActivePanel(null);
-    } else {
-      setActivePanel(panel);
-      if (panel) {
-        setPanelTab(panel);
-      }
-    }
-  };
 
   // 地图拖拽处理 - 在地图网格上拖拽
   const handleMapMouseDown = (e: React.MouseEvent) => {
@@ -313,6 +631,44 @@ const FullscreenMapView: React.FC<FullscreenMapViewProps> = ({
             </div>
           </div>
         </div>
+        <div className="top-bar-right">
+          <button
+            className={`top-tab ${panelTab === 'disciples' && activePanel !== null ? 'active' : ''}`}
+            onClick={() => { setPanelTab('disciples'); setActivePanel('disciples'); }}
+          >
+            👥 弟子
+          </button>
+          <button
+            className={`top-tab ${panelTab === 'tasks' && activePanel !== null ? 'active' : ''}`}
+            onClick={() => { setPanelTab('tasks'); setActivePanel('tasks'); }}
+          >
+            📋 任务
+          </button>
+          <button
+            className={`top-tab ${panelTab === 'mapinfo' && activePanel !== null ? 'active' : ''}`}
+            onClick={() => { setPanelTab('mapinfo'); setActivePanel('mapinfo'); }}
+          >
+            🗺️ 地图
+          </button>
+          <button
+            className={`top-tab ${panelTab === 'buildings' && activePanel !== null ? 'active' : ''}`}
+            onClick={() => { setPanelTab('buildings'); setActivePanel('buildings'); }}
+          >
+            🏛️ 建筑
+          </button>
+          <button
+            className={`top-tab ${panelTab === 'alchemy' && activePanel !== null ? 'active' : ''}`}
+            onClick={() => { setPanelTab('alchemy'); setActivePanel('alchemy'); }}
+          >
+            🧪 炼丹
+          </button>
+          <button
+            className={`top-tab ${panelTab === 'pills' && activePanel !== null ? 'active' : ''}`}
+            onClick={() => { setPanelTab('pills'); setActivePanel('pills'); }}
+          >
+            💊 丹药
+          </button>
+        </div>
       </div>
 
       {/* 主要内容区域 */}
@@ -335,6 +691,8 @@ const FullscreenMapView: React.FC<FullscreenMapViewProps> = ({
               onElementSelected={handleElementSelected}
               onDiscipleSelected={handleDiscipleSelected}
               onMoveError={setMoveError}
+              onLongDistanceMove={handleLongDistanceMove}
+              pendingPaths={pendingPaths}
               transform={mapPosition}
               onMapMouseDown={handleMapMouseDown}
               isPanning={isPanning}
@@ -377,73 +735,18 @@ const FullscreenMapView: React.FC<FullscreenMapViewProps> = ({
             </div>
           )}
 
-          {/* 面板切换按钮 */}
-          <div className="panel-toggle-buttons">
-            <button
-              className={`panel-toggle-btn ${activePanel === 'disciples' ? 'active' : ''}`}
-              onClick={() => togglePanel('disciples')}
-              title="弟子列表"
-            >
-              👥
-            </button>
-            <button
-              className={`panel-toggle-btn ${activePanel === 'tasks' ? 'active' : ''}`}
-              onClick={() => togglePanel('tasks')}
-              title="任务列表"
-            >
-              📋
-            </button>
-            <button
-              className={`panel-toggle-btn ${activePanel === 'buildings' ? 'active' : ''}`}
-              onClick={() => togglePanel('buildings')}
-              title="宗门建筑"
-            >
-              🏛️
-            </button>
-            <button
-              className={`panel-toggle-btn ${activePanel === 'alchemy' ? 'active' : ''}`}
-              onClick={() => togglePanel('alchemy')}
-              title="炼丹"
-            >
-              🧪
-            </button>
-          </div>
         </div>
 
         {/* 侧边面板 */}
         <div className={`side-panel ${activePanel === null ? 'collapsed' : ''}`}>
           <div className="panel-header">
-            <div className="panel-tabs">
-              <button
-                className={`panel-tab ${panelTab === 'disciples' ? 'active' : ''}`}
-                onClick={() => setPanelTab('disciples')}
-              >
-                弟子列表 ({disciples.length})
-              </button>
-              <button
-                className={`panel-tab ${panelTab === 'tasks' ? 'active' : ''}`}
-                onClick={() => setPanelTab('tasks')}
-              >
-                任务列表 ({tasks.length})
-              </button>
-              <button
-                className={`panel-tab ${panelTab === 'mapinfo' ? 'active' : ''}`}
-                onClick={() => setPanelTab('mapinfo')}
-              >
-                地图信息
-              </button>
-              <button
-                className={`panel-tab ${panelTab === 'buildings' ? 'active' : ''}`}
-                onClick={() => setPanelTab('buildings')}
-              >
-                宗门建筑
-              </button>
-              <button
-                className={`panel-tab ${panelTab === 'alchemy' ? 'active' : ''}`}
-                onClick={() => setPanelTab('alchemy')}
-              >
-                炼丹
-              </button>
+            <div className="panel-title">
+              {panelTab === 'disciples' && `👥 弟子列表 (${disciples.length})`}
+              {panelTab === 'tasks' && `📋 任务列表 (${tasks.length})`}
+              {panelTab === 'mapinfo' && '🗺️ 地图信息'}
+              {panelTab === 'buildings' && '🏛️ 宗门建筑'}
+              {panelTab === 'alchemy' && '🧪 炼丹'}
+              {panelTab === 'pills' && '💊 丹药'}
             </div>
             <button className="panel-close" onClick={() => setActivePanel(null)}>
               ✕
@@ -863,6 +1166,50 @@ const FullscreenMapView: React.FC<FullscreenMapViewProps> = ({
                           </div>
                           <div style={{ fontSize: '11px', marginTop: '2px', color: '#4a5568' }}>
                             进度: {selectedMapDisciple.current_task_info.progress}/{selectedMapDisciple.current_task_info.duration} 回合
+                          </div>
+                        </div>
+                      )}
+
+                      {/* 待移动路径 */}
+                      {getPendingPath(selectedMapDisciple.id).length > 0 && (
+                        <div style={{
+                          backgroundColor: '#fffbeb',
+                          padding: '8px',
+                          borderRadius: '4px',
+                          marginTop: '8px',
+                          border: '1px dashed #f59e0b'
+                        }}>
+                          <div style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center'
+                          }}>
+                            <span style={{ fontWeight: 'bold', color: '#b45309' }}>
+                              🗺️ 待移动路径
+                            </span>
+                            <button
+                              onClick={() => cancelPendingPath(selectedMapDisciple.id)}
+                              style={{
+                                padding: '2px 8px',
+                                fontSize: '11px',
+                                backgroundColor: '#fef3c7',
+                                border: '1px solid #f59e0b',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                color: '#b45309'
+                              }}
+                            >
+                              ✕ 取消
+                            </button>
+                          </div>
+                          <div style={{ fontSize: '12px', marginTop: '4px', color: '#92400e' }}>
+                            剩余 {getPendingPath(selectedMapDisciple.id).length} 格
+                          </div>
+                          <div style={{ fontSize: '11px', marginTop: '2px', color: '#78716c' }}>
+                            目标: ({getPendingPath(selectedMapDisciple.id).slice(-1)[0]?.x}, {getPendingPath(selectedMapDisciple.id).slice(-1)[0]?.y})
+                          </div>
+                          <div style={{ fontSize: '10px', marginTop: '4px', color: '#a8a29e' }}>
+                            下回合将自动继续移动
                           </div>
                         </div>
                       )}
@@ -1356,14 +1703,144 @@ const FullscreenMapView: React.FC<FullscreenMapViewProps> = ({
                 )}
               </div>
             )}
+
+            {panelTab === 'pills' && (
+              <div style={{ padding: '0.5rem' }}>
+                {alchemyMessage && (
+                  <div style={{
+                    padding: '0.5rem 0.75rem',
+                    borderRadius: '6px',
+                    marginBottom: '0.75rem',
+                    background: alchemyMessage.type === 'success' ? '#d1fae5' : '#fee2e2',
+                    color: alchemyMessage.type === 'success' ? '#047857' : '#dc2626',
+                    border: `1px solid ${alchemyMessage.type === 'success' ? '#34d399' : '#f87171'}`,
+                    fontSize: '0.9rem'
+                  }}>
+                    {alchemyMessage.text}
+                  </div>
+                )}
+
+                {alchemyLoading ? (
+                  <div style={{ textAlign: 'center', padding: '1rem', color: '#666' }}>加载中...</div>
+                ) : (
+                  <div>
+                    <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '1rem', color: '#374151' }}>
+                      💊 宗门丹药库存
+                    </h4>
+                    {pillInventory && Object.keys(pillInventory.pills).length > 0 ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                        {Object.entries(pillInventory.pills).map(([pillType, pill]) => (
+                          <div key={pillType} style={{
+                            padding: '1rem',
+                            background: 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)',
+                            border: '2px solid #f59e0b',
+                            borderRadius: '12px',
+                            boxShadow: '0 2px 8px rgba(245, 158, 11, 0.2)'
+                          }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                              <span style={{ fontWeight: 700, fontSize: '1.1rem', color: '#92400e' }}>
+                                {pill.name}
+                              </span>
+                              <span style={{
+                                background: '#f59e0b',
+                                color: 'white',
+                                padding: '0.25rem 0.75rem',
+                                borderRadius: '20px',
+                                fontSize: '0.9rem',
+                                fontWeight: 600
+                              }}>
+                                库存: {pill.count}
+                              </span>
+                            </div>
+                            <div style={{ fontSize: '0.9rem', color: '#78716c', marginBottom: '0.75rem' }}>
+                              {pill.description}
+                            </div>
+                            <div style={{
+                              fontSize: '0.85rem',
+                              color: '#059669',
+                              background: '#d1fae5',
+                              padding: '0.5rem',
+                              borderRadius: '6px',
+                              marginBottom: '0.75rem'
+                            }}>
+                              效果: 精力+{pill.energy_restore} 体魄+{pill.constitution_restore}
+                            </div>
+                            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                              <select
+                                value={selectedPillDisciple || ''}
+                                onChange={(e) => setSelectedPillDisciple(e.target.value ? parseInt(e.target.value) : null)}
+                                style={{
+                                  flex: 1,
+                                  padding: '0.5rem',
+                                  border: '2px solid #d4d4d4',
+                                  borderRadius: '6px',
+                                  fontSize: '0.9rem',
+                                  background: 'white'
+                                }}
+                              >
+                                <option value="">选择弟子服用...</option>
+                                {disciples.map(d => (
+                                  <option key={d.id} value={d.id}>
+                                    {d.name} (精力:{d.energy}/100 体魄:{d.constitution}/100)
+                                  </option>
+                                ))}
+                              </select>
+                              <button
+                                onClick={() => {
+                                  if (selectedPillDisciple) {
+                                    handleUsePill(pillType, selectedPillDisciple);
+                                    setSelectedPillDisciple(null);
+                                  }
+                                }}
+                                disabled={!selectedPillDisciple || alchemyLoading || pill.count <= 0}
+                                style={{
+                                  padding: '0.5rem 1rem',
+                                  border: 'none',
+                                  borderRadius: '6px',
+                                  fontWeight: 700,
+                                  fontSize: '0.9rem',
+                                  cursor: selectedPillDisciple ? 'pointer' : 'not-allowed',
+                                  background: selectedPillDisciple
+                                    ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)'
+                                    : '#d1d5db',
+                                  color: selectedPillDisciple ? 'white' : '#6b7280',
+                                  boxShadow: selectedPillDisciple ? '0 2px 4px rgba(245, 158, 11, 0.3)' : 'none'
+                                }}
+                              >
+                                服用
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div style={{
+                        padding: '2rem',
+                        background: '#f9fafb',
+                        borderRadius: '12px',
+                        color: '#9ca3af',
+                        textAlign: 'center',
+                        border: '2px dashed #d1d5db'
+                      }}>
+                        <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>💊</div>
+                        <div style={{ fontSize: '1rem' }}>暂无丹药</div>
+                        <div style={{ fontSize: '0.85rem', marginTop: '0.5rem' }}>
+                          前往「炼丹」页面炼制丹药吧！
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>
 
       {/* 底部控制栏 */}
       <div className="bottom-bar">
-        <button className="control-button primary" onClick={onNextTurn}>
-          ⏭ 下一回合
+        <button className="control-button primary" onClick={handleNextTurnWithPaths}>
+          ⏭ 下一回合 {pendingPaths.size > 0 && `(${pendingPaths.size}个弟子待续行)`}
         </button>
         <button className="control-button secondary" onClick={onAutoAssign}>
           🤖 自动分配任务
