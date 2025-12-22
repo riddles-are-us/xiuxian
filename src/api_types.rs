@@ -429,6 +429,7 @@ pub enum MapElementDetails {
     SecretRealm { realm_type: String, difficulty: u32, under_attack: Option<AttackInfo> },
     Monster { monster_id: String, level: u32, is_demon: bool, growth_rate: f64, invading_location: Option<String> },
     Terrain { terrain_type: String },
+    Herb { herb_id: String, quality: String, growth_stage: u32, max_growth: u32, is_mature: bool },
 }
 
 /// 攻击信息
@@ -548,6 +549,13 @@ pub struct MoveDiscipleRequest {
     pub y: i32,
 }
 
+/// 采集的草药信息
+#[derive(Debug, Serialize)]
+pub struct CollectedHerbInfo {
+    pub name: String,
+    pub quality: String,
+}
+
 /// 移动弟子响应
 #[derive(Debug, Serialize)]
 pub struct MoveDiscipleResponse {
@@ -557,6 +565,7 @@ pub struct MoveDiscipleResponse {
     pub disciple_name: String,
     pub old_position: PositionDto,
     pub new_position: PositionDto,
+    pub collected_herb: Option<CollectedHerbInfo>,
 }
 
 // === 关系系统相关 ===
@@ -639,4 +648,58 @@ pub struct RelationshipPairDto {
     pub to_name: String,
     pub scores: RelationScoresDto,
     pub primary_relation: String,
+}
+
+// === 草药和丹药仓库相关 ===
+
+/// 草药条目DTO
+#[derive(Debug, Serialize)]
+pub struct HerbEntryDto {
+    pub name: String,
+    pub quality: String,
+    pub count: u32,
+}
+
+/// 草药仓库响应
+#[derive(Debug, Serialize)]
+pub struct HerbInventoryResponse {
+    pub total_count: u32,
+    pub herbs: Vec<HerbEntryDto>,
+}
+
+
+/// 丹药配方DTO
+#[derive(Debug, Serialize)]
+pub struct PillRecipeDto {
+    pub pill_type: String,
+    pub name: String,
+    pub description: String,
+    pub required_herb_quality: String,
+    pub required_herb_count: u32,
+    pub resource_cost: u32,
+    pub success_rate: f64,
+    pub output_count: u32,
+    pub can_craft: bool,
+    pub reason: Option<String>,
+}
+
+/// 所有配方响应
+#[derive(Debug, Serialize)]
+pub struct AllRecipesResponse {
+    pub recipes: Vec<PillRecipeDto>,
+}
+
+/// 炼制丹药请求
+#[derive(Debug, Deserialize)]
+pub struct RefinePillRequest {
+    pub pill_type: String,
+}
+
+/// 炼制丹药响应
+#[derive(Debug, Serialize)]
+pub struct RefinePillResponse {
+    pub success: bool,
+    pub message: String,
+    pub pill_name: Option<String>,
+    pub output_count: Option<u32>,
 }

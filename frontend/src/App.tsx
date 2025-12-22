@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { gameApi, GameInfo, Disciple, Task, MapData, VersionInfo, PillInventory } from './api/gameApi';
 import FullscreenMapView from './FullscreenMapView';
 import BuildingTree from './BuildingTree';
+import AlchemyPanel from './AlchemyPanel';
 import APP_CONFIG from './config';
 import './App.css';
 
@@ -20,6 +21,7 @@ function App() {
   const [showMap, setShowMap] = useState(false);
   const [showPills, setShowPills] = useState(false);
   const [showBuildings, setShowBuildings] = useState(false);
+  const [showAlchemy, setShowAlchemy] = useState(false);
   const [notifications, setNotifications] = useState<Array<{id: number, message: string, type: string}>>([]);
   const [pendingRecruitment, setPendingRecruitment] = useState<Disciple | null>(null);
   const [mapPosition, setMapPosition] = useState({ x: 0, y: 0 }); // 地图位置状态提升，避免loading时重置
@@ -455,6 +457,9 @@ function App() {
         <button onClick={() => setShowPills(!showPills)} className="btn-secondary">
           {showPills ? '隐藏丹药' : '丹药库存'}
         </button>
+        <button onClick={() => setShowAlchemy(!showAlchemy)} className="btn-primary">
+          {showAlchemy ? '隐藏炼丹' : '炼丹炉'}
+        </button>
         <button onClick={resetGame} className="btn-warning">重置游戏</button>
       </div>
 
@@ -605,6 +610,15 @@ function App() {
             ))}
           </div>
         </div>
+      )}
+
+      {showAlchemy && gameId && (
+        <AlchemyPanel
+          gameId={gameId}
+          onRefineSuccess={() => {
+            loadGameData(gameId);
+          }}
+        />
       )}
 
       <div className="content">

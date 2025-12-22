@@ -152,6 +152,12 @@ export interface MapElement {
     growth_rate?: number;  // 成长速率 (每回合升级概率)
     invading_location?: string;  // 妖魔正在入侵的地点ID
     terrain_type?: string;  // 地形类型：Mountain, Water, Forest, Plain
+    // 草药相关
+    herb_id?: string;       // 草药唯一ID
+    quality?: string;       // 品质：普通、良品、稀有、珍品、仙品
+    growth_stage?: number;  // 生长阶段 0-100
+    max_growth?: number;    // 最大生长值
+    is_mature?: boolean;    // 是否成熟
   };
 }
 
@@ -217,6 +223,58 @@ export interface BuildBuildingResponse {
   resources_before: number;
   resources_after: number;
   effects_count: number;
+}
+
+// 草药条目
+export interface HerbEntry {
+  name: string;
+  quality: string;
+  count: number;
+}
+
+// 草药仓库响应
+export interface HerbInventoryResponse {
+  total_count: number;
+  herbs: HerbEntry[];
+}
+
+// 丹药配方
+export interface PillRecipe {
+  pill_type: string;
+  name: string;
+  description: string;
+  required_herb_quality: string;
+  required_herb_count: number;
+  resource_cost: number;
+  success_rate: number;
+  output_count: number;
+  can_craft: boolean;
+  reason: string | null;
+}
+
+// 炼制丹药响应
+export interface RefinePillResponse {
+  success: boolean;
+  message: string;
+  pill_name: string | null;
+  output_count: number | null;
+}
+
+// 采集草药信息
+export interface CollectedHerbInfo {
+  name: string;
+  quality: string;
+}
+
+// 移动弟子响应（更新）
+export interface MoveDiscipleResponse {
+  success: boolean;
+  message: string;
+  disciple_id: number;
+  disciple_name: string;
+  old_position: { x: number; y: number };
+  new_position: { x: number; y: number };
+  collected_herb: CollectedHerbInfo | null;
 }
 
 export const gameApi = {
@@ -345,5 +403,25 @@ export const gameApi = {
   getDiscipleRelationships: async (gameId: string, discipleId: number): Promise<Relationship[]> => {
     const response = await axios.get(`${API_BASE}/game/${gameId}/disciples/${discipleId}/relationships`);
     return response.data.data.relationships;
+  },
+
+  // 获取草药仓库
+  getHerbInventory: async (gameId: string): Promise<HerbInventoryResponse> => {
+    const response = await axios.get(`${API_BASE}/game/${gameId}/herbs`);
+    return response.data.data;
+  },
+
+  // 获取所有配方
+  getRecipes: async (gameId: string): Promise<PillRecipe[]> => {
+    const response = await axios.get(`${API_BASE}/game/${gameId}/recipes`);
+    return response.data.data.recipes;
+  },
+
+  // 炼制丹药
+  refinePill: async (gameId: string, pillType: string): Promise<RefinePillResponse> => {
+    const response = await axios.post(`${API_BASE}/game/${gameId}/refine`, {
+      pill_type: pillType
+    });
+    return response.data.data;
   }
 };

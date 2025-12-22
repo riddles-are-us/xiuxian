@@ -15,6 +15,7 @@ pub enum MapElement {
     SecretRealm(SecretRealm),
     Monster(Monster),
     Terrain(Terrain),  // 基础地形要素
+    Herb(Herb),        // 草药
 }
 
 /// 地形类型
@@ -57,6 +58,7 @@ impl MapElement {
             MapElement::SecretRealm(s) => format!("realm_{}", s.name),
             MapElement::Monster(m) => format!("monster_{}", m.id),
             MapElement::Terrain(t) => format!("terrain_{}", t.name),
+            MapElement::Herb(h) => format!("herb_{}", h.id),
         }
     }
 
@@ -70,6 +72,7 @@ impl MapElement {
             MapElement::SecretRealm(s) => s.generate_tasks(task_id_start),
             MapElement::Monster(m) => m.generate_tasks(task_id_start),
             MapElement::Terrain(_) => Vec::new(),  // 地形不产生任务
+            MapElement::Herb(_) => Vec::new(),     // 草药不产生任务
         };
 
         // 为所有任务设置location_id
@@ -545,6 +548,117 @@ impl Monster {
     }
 }
 
+/// 草药品质
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum HerbQuality {
+    Common,     // 普通
+    Uncommon,   // 良品
+    Rare,       // 稀有
+    Epic,       // 珍品
+    Legendary,  // 仙品
+}
+
+impl HerbQuality {
+    /// 获取品质对应的修为加成
+    pub fn cultivation_bonus(&self) -> u32 {
+        match self {
+            HerbQuality::Common => 1,
+            HerbQuality::Uncommon => 2,
+            HerbQuality::Rare => 5,
+            HerbQuality::Epic => 10,
+            HerbQuality::Legendary => 25,
+        }
+    }
+
+    /// 获取品质名称
+    pub fn name(&self) -> &'static str {
+        match self {
+            HerbQuality::Common => "普通",
+            HerbQuality::Uncommon => "良品",
+            HerbQuality::Rare => "稀有",
+            HerbQuality::Epic => "珍品",
+            HerbQuality::Legendary => "仙品",
+        }
+    }
+}
+
+/// 草药
+#[derive(Debug, Clone)]
+pub struct Herb {
+    pub id: usize,              // 唯一标识符
+    pub name: String,           // 草药名称
+    pub quality: HerbQuality,   // 品质
+    pub growth_stage: u32,      // 当前生长阶段 (0-100)
+    pub growth_rate: u32,       // 每回合生长速度
+    pub max_growth: u32,        // 最大生长值（成熟时）
+}
+
+// 全局草药ID计数器
+static NEXT_HERB_ID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// 草药名称池
+const HERB_NAMES: &[&str] = &[
+    "灵芝", "人参", "何首乌", "雪莲", "紫芝",
+    "九叶灵草", "千年血藤", "冰魄寒花", "火灵果", "碧玉仙草",
+    "龙血草", "凤尾兰", "天山雪莲", "万年灵芝", "玄冰草",
+];
+
+impl Herb {
+    /// 创建随机草药
+    pub fn new_random() -> Self {
+        use rand::Rng;
+        let mut rng = rand::thread_rng();
+
+        let id = NEXT_HERB_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let name = HERB_NAMES[rng.gen_range(0..HERB_NAMES.len())].to_string();
+
+        // 随机品质（越稀有概率越低）
+        let quality_roll: f64 = rng.gen();
+        let quality = if quality_roll < 0.5 {
+            HerbQuality::Common
+        } else if quality_roll < 0.75 {
+            HerbQuality::Uncommon
+        } else if quality_roll < 0.90 {
+            HerbQuality::Rare
+        } else if quality_roll < 0.98 {
+            HerbQuality::Epic
+        } else {
+            HerbQuality::Legendary
+        };
+
+        // 生长速度：5-15 每回合
+        let growth_rate = rng.gen_range(5..=15);
+
+        Self {
+            id,
+            name,
+            quality,
+            growth_stage: 0,
+            growth_rate,
+            max_growth: 100,
+        }
+    }
+
+    /// 生长一回合
+    pub fn grow(&mut self) {
+        self.growth_stage = (self.growth_stage + self.growth_rate).min(self.max_growth);
+    }
+
+    /// 是否成熟
+    pub fn is_mature(&self) -> bool {
+        self.growth_stage >= self.max_growth
+    }
+
+    /// 获取被吞噬时提供的修为加成
+    pub fn get_cultivation_value(&self) -> u32 {
+        // 基础值 * 品质加成 * 成熟度
+        let base = 5;
+        let quality_bonus = self.quality.cultivation_bonus();
+        let maturity = self.growth_stage as f64 / self.max_growth as f64;
+        ((base + quality_bonus) as f64 * (0.5 + 0.5 * maturity)) as u32
+    }
+}
+
 /// 游戏地图
 #[derive(Debug)]
 pub struct GameMap {
@@ -636,6 +750,34 @@ impl GameMap {
                         x: pos.x,
                         y: pos.y,
                     },
+                });
+            }
+        }
+
+        // 生成初始草药（3-5个）
+        self.spawn_initial_herbs();
+    }
+
+    /// 生成初始草药
+    fn spawn_initial_herbs(&mut self) {
+        use rand::Rng;
+        let mut rng = rand::thread_rng();
+
+        let herb_count = rng.gen_range(3..=5);
+        for _ in 0..herb_count {
+            let x = rng.gen_range(0..self.width);
+            let y = rng.gen_range(0..self.height);
+
+            // 检查该位置是否已经有草药
+            let has_herb = self.elements.iter().any(|e| {
+                matches!(e.element, MapElement::Herb(_)) &&
+                e.position.x == x && e.position.y == y
+            });
+
+            if !has_herb {
+                self.elements.push(PositionedElement {
+                    element: MapElement::Herb(Herb::new_random()),
+                    position: Position { x, y },
                 });
             }
         }
@@ -756,6 +898,32 @@ impl GameMap {
                 });
             }
         }
+
+        // 草药生长
+        for positioned in &mut self.elements {
+            if let MapElement::Herb(herb) = &mut positioned.element {
+                herb.grow();
+            }
+        }
+
+        // 随机生成新草药（20% 概率）
+        if rng.gen_bool(0.20) {
+            let x = rng.gen_range(0..self.width);
+            let y = rng.gen_range(0..self.height);
+
+            // 检查该位置是否已经有草药
+            let has_herb = self.elements.iter().any(|e| {
+                matches!(e.element, MapElement::Herb(_)) &&
+                e.position.x == x && e.position.y == y
+            });
+
+            if !has_herb {
+                self.elements.push(PositionedElement {
+                    element: MapElement::Herb(Herb::new_random()),
+                    position: Position { x, y },
+                });
+            }
+        }
     }
 
     /// 妖魔行动（移动或修行）
@@ -799,6 +967,59 @@ impl GameMap {
                     self.check_monster_invasion(monster_index, new_position);
                 }
             }
+        }
+
+        // 怪物吞噬草药（在移动后检查）
+        self.monsters_consume_herbs();
+    }
+
+    /// 怪物吞噬所在位置的草药
+    fn monsters_consume_herbs(&mut self) {
+        // 收集所有怪物的位置
+        let monster_positions: Vec<(usize, Position)> = self.elements.iter().enumerate()
+            .filter_map(|(i, e)| {
+                if let MapElement::Monster(_) = &e.element {
+                    Some((i, e.position))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        // 找出被吞噬的草药并计算修为增益
+        let mut herbs_to_remove: Vec<usize> = Vec::new();
+        let mut monster_cultivation_gains: Vec<(usize, u32)> = Vec::new();
+
+        for (monster_idx, monster_pos) in &monster_positions {
+            for (herb_idx, positioned) in self.elements.iter().enumerate() {
+                if let MapElement::Herb(herb) = &positioned.element {
+                    if positioned.position.x == monster_pos.x && positioned.position.y == monster_pos.y {
+                        let cultivation_value = herb.get_cultivation_value();
+                        monster_cultivation_gains.push((*monster_idx, cultivation_value));
+                        herbs_to_remove.push(herb_idx);
+                    }
+                }
+            }
+        }
+
+        // 给怪物增加修为（等级）
+        for (monster_idx, gain) in monster_cultivation_gains {
+            if let Some(positioned) = self.elements.get_mut(monster_idx) {
+                if let MapElement::Monster(monster) = &mut positioned.element {
+                    // 每 10 点修为提升 1 级
+                    let level_gain = gain / 10;
+                    if level_gain > 0 {
+                        monster.level += level_gain;
+                    }
+                }
+            }
+        }
+
+        // 移除被吞噬的草药（从后向前删除以保持索引正确）
+        herbs_to_remove.sort();
+        herbs_to_remove.reverse();
+        for herb_idx in herbs_to_remove {
+            self.elements.remove(herb_idx);
         }
     }
 
@@ -909,6 +1130,18 @@ impl GameMap {
                 }
             }
         }
+    }
+
+    /// 获取怪物的当前位置
+    pub fn get_monster_position(&self, monster_id: usize) -> Option<Position> {
+        for positioned in &self.elements {
+            if let MapElement::Monster(monster) = &positioned.element {
+                if monster.id == monster_id {
+                    return Some(positioned.position);
+                }
+            }
+        }
+        None
     }
 
     /// 检查所有守卫任务，移除那些妖魔已离开的任务

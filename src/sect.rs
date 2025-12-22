@@ -1,6 +1,7 @@
 use crate::disciple::{Disciple, DiscipleType, Heritage};
 use crate::cultivation::CultivationLevel;
-use crate::pill::PillInventory;
+use crate::pill::{PillInventory, HerbInventory, PillRecipe, PillType};
+use crate::map::HerbQuality;
 use crate::modifier::ConditionalModifier;
 use crate::building::BuildingTree;
 use crate::relationship::{Relationship, RelationDimension, RelationLevel, RelationGrowth};
@@ -17,6 +18,7 @@ pub struct Sect {
     pub heritages: Vec<Heritage>, // 传承库
     pub year: u32, // 当前年份
     pub pill_inventory: PillInventory, // 丹药库存
+    pub herb_inventory: HerbInventory, // 草药仓库
     pub sect_modifiers: Vec<ConditionalModifier>, // 宗门级别的条件modifier
     pub building_tree: Option<BuildingTree>, // 建筑树（可选）
 }
@@ -32,8 +34,66 @@ impl Sect {
             heritages: Vec::new(),
             year: 0,
             pill_inventory: PillInventory::new(),
+            herb_inventory: HerbInventory::new(),
             sect_modifiers: Vec::new(),
             building_tree: None,
+        }
+    }
+
+    /// 添加草药到仓库
+    pub fn add_herb(&mut self, name: &str, quality: HerbQuality) {
+        self.herb_inventory.add(name, quality, 1);
+    }
+
+    /// 炼制丹药（使用草药和资源）
+    pub fn refine_pill(&mut self, pill_type: PillType) -> Result<u32, String> {
+        use rand::Rng;
+
+        let recipe = PillRecipe::for_pill(pill_type)
+            .ok_or_else(|| "找不到该丹药配方".to_string())?;
+
+        // 检查资源
+        if self.resources < recipe.resource_cost {
+            return Err(format!("资源不足，需要{}资源", recipe.resource_cost));
+        }
+
+        // 检查草药（按品质消耗任意草药）
+        let available = self.herb_inventory.count_by_quality(recipe.required_herb_quality);
+        if available < recipe.required_herb_count {
+            return Err(format!(
+                "{}品质草药不足，需要{}个，当前{}个",
+                recipe.required_herb_quality.name(),
+                recipe.required_herb_count,
+                available
+            ));
+        }
+
+        // 消耗资源
+        self.resources -= recipe.resource_cost;
+
+        // 消耗草药（消耗任意该品质的草药）
+        let herbs_to_consume = self.herb_inventory.get_all()
+            .into_iter()
+            .filter(|h| h.quality == recipe.required_herb_quality)
+            .collect::<Vec<_>>();
+
+        let mut remaining = recipe.required_herb_count;
+        for herb in herbs_to_consume {
+            if remaining == 0 {
+                break;
+            }
+            let consume_count = remaining.min(herb.count);
+            self.herb_inventory.consume(&herb.name, herb.quality, consume_count);
+            remaining -= consume_count;
+        }
+
+        // 判断炼制是否成功
+        let mut rng = rand::thread_rng();
+        if rng.gen_bool(recipe.success_rate) {
+            self.pill_inventory.add(pill_type, recipe.output_count);
+            Ok(recipe.output_count)
+        } else {
+            Err("炼制失败，材料已消耗".to_string())
         }
     }
 

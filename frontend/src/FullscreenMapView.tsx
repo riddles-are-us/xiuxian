@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { MapData, MapElement, Disciple, Task, GameInfo, gameApi, Relationship } from './api/gameApi';
+import { MapData, MapElement, Disciple, Task, GameInfo, gameApi, Relationship, HerbInventoryResponse, PillRecipe } from './api/gameApi';
 import MapView from './MapView';
 import { getElementIcon, renderElementDetails } from './MapElementDetails';
 import BuildingTree from './BuildingTree';
@@ -20,7 +20,7 @@ interface FullscreenMapViewProps {
   onMapPositionChange: (pos: { x: number; y: number }) => void;
 }
 
-type PanelType = 'disciples' | 'tasks' | 'mapinfo' | 'buildings' | null;
+type PanelType = 'disciples' | 'tasks' | 'mapinfo' | 'buildings' | 'alchemy' | null;
 
 const FullscreenMapView: React.FC<FullscreenMapViewProps> = ({
   mapData,
@@ -37,7 +37,13 @@ const FullscreenMapView: React.FC<FullscreenMapViewProps> = ({
   onMapPositionChange
 }) => {
   const [activePanel, setActivePanel] = useState<PanelType>(null);
-  const [panelTab, setPanelTab] = useState<'disciples' | 'tasks' | 'mapinfo' | 'buildings'>('disciples');
+  const [panelTab, setPanelTab] = useState<'disciples' | 'tasks' | 'mapinfo' | 'buildings' | 'alchemy'>('disciples');
+
+  // 炼丹相关状态
+  const [herbInventory, setHerbInventory] = useState<HerbInventoryResponse | null>(null);
+  const [recipes, setRecipes] = useState<PillRecipe[]>([]);
+  const [alchemyLoading, setAlchemyLoading] = useState(false);
+  const [alchemyMessage, setAlchemyMessage] = useState<{text: string, type: 'success' | 'error'} | null>(null);
 
   // 地图信息状态
   const [selectedElement, setSelectedElement] = useState<MapElement | null>(null);
@@ -67,6 +73,64 @@ const FullscreenMapView: React.FC<FullscreenMapViewProps> = ({
       setShowRelationships(false);
     }
   }, [selectedMapDisciple, gameId]);
+
+  // 加载炼丹数据
+  const loadAlchemyData = async () => {
+    try {
+      setAlchemyLoading(true);
+      const [herbData, recipeData] = await Promise.all([
+        gameApi.getHerbInventory(gameId),
+        gameApi.getRecipes(gameId)
+      ]);
+      setHerbInventory(herbData);
+      setRecipes(recipeData);
+    } catch (err) {
+      console.error('Failed to load alchemy data:', err);
+    } finally {
+      setAlchemyLoading(false);
+    }
+  };
+
+  // 当切换到炼丹 tab 时加载数据
+  useEffect(() => {
+    if (panelTab === 'alchemy') {
+      loadAlchemyData();
+    }
+  }, [panelTab, gameId]);
+
+  // 炼制丹药
+  const handleRefine = async (pillType: string) => {
+    try {
+      setAlchemyLoading(true);
+      const result = await gameApi.refinePill(gameId, pillType);
+      setAlchemyMessage({
+        text: result.message,
+        type: result.success ? 'success' : 'error'
+      });
+      await loadAlchemyData();
+      setTimeout(() => setAlchemyMessage(null), 3000);
+    } catch (err: any) {
+      setAlchemyMessage({
+        text: err.message || '炼制失败',
+        type: 'error'
+      });
+      setTimeout(() => setAlchemyMessage(null), 3000);
+    } finally {
+      setAlchemyLoading(false);
+    }
+  };
+
+  // 获取品质颜色
+  const getQualityColor = (quality: string) => {
+    switch (quality) {
+      case '普通': return '#9ca3af';
+      case '良品': return '#22c55e';
+      case '稀有': return '#3b82f6';
+      case '珍品': return '#a855f7';
+      case '仙品': return '#f59e0b';
+      default: return '#6b7280';
+    }
+  };
 
   // 地图拖拽平移状态 - 使用 transform 而不是 scroll
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -336,6 +400,13 @@ const FullscreenMapView: React.FC<FullscreenMapViewProps> = ({
             >
               🏛️
             </button>
+            <button
+              className={`panel-toggle-btn ${activePanel === 'alchemy' ? 'active' : ''}`}
+              onClick={() => togglePanel('alchemy')}
+              title="炼丹"
+            >
+              🧪
+            </button>
           </div>
         </div>
 
@@ -366,6 +437,12 @@ const FullscreenMapView: React.FC<FullscreenMapViewProps> = ({
                 onClick={() => setPanelTab('buildings')}
               >
                 宗门建筑
+              </button>
+              <button
+                className={`panel-tab ${panelTab === 'alchemy' ? 'active' : ''}`}
+                onClick={() => setPanelTab('alchemy')}
+              >
+                炼丹
               </button>
             </div>
             <button className="panel-close" onClick={() => setActivePanel(null)}>
@@ -873,12 +950,32 @@ const FullscreenMapView: React.FC<FullscreenMapViewProps> = ({
 
                       {/* 显示弟子当前位置可接受的任务 */}
                       {!selectedMapDisciple.current_task_info && (() => {
-                        // 获取该位置所有任务（不过滤弟子条件）
-                        const tasksAtPosition = tasks.filter(t =>
-                          t.position &&
-                          t.position.x === selectedMapDisciple.position.x &&
-                          t.position.y === selectedMapDisciple.position.y
+                        // 查找弟子位置的怪物（如果有）
+                        const monsterAtPosition = mapData?.elements.find(e =>
+                          e.element_type === 'Monster' &&
+                          e.position.x === selectedMapDisciple.position.x &&
+                          e.position.y === selectedMapDisciple.position.y
                         );
+
+                        // 获取该位置所有任务（不过滤弟子条件）
+                        const tasksAtPosition = tasks.filter(t => {
+                          // 按位置匹配
+                          if (t.position &&
+                              t.position.x === selectedMapDisciple.position.x &&
+                              t.position.y === selectedMapDisciple.position.y) {
+                            return true;
+                          }
+
+                          // 如果弟子位置有怪物，匹配相关的战斗任务（通过 monster_id）
+                          if (monsterAtPosition &&
+                              monsterAtPosition.details.monster_id &&
+                              t.enemy_info &&
+                              t.enemy_info.enemy_id === monsterAtPosition.details.monster_id) {
+                            return true;
+                          }
+
+                          return false;
+                        });
                         if (tasksAtPosition.length === 0) return null;
 
                         // 判断弟子是否可以接受任务，返回原因
@@ -895,11 +992,65 @@ const FullscreenMapView: React.FC<FullscreenMapViewProps> = ({
                           if (task.suitable_disciples.busy.includes(selectedMapDisciple.id)) {
                             return { canAccept: false, reason: '需要完成当前任务' };
                           }
-                          // 不在 free 也不在 busy，说明不满足技能要求
-                          if (task.skill_required) {
-                            return { canAccept: false, reason: `需要技能: ${task.skill_required}` };
+                          // 不在 free 也不在 busy，检查具体原因
+                          const reasons: string[] = [];
+
+                          // 检查位置是否匹配（防止数据不同步）
+                          if (task.position &&
+                              (task.position.x !== selectedMapDisciple.position.x ||
+                               task.position.y !== selectedMapDisciple.position.y)) {
+                            reasons.push(`弟子不在任务位置 (任务在${task.position.x},${task.position.y})`);
                           }
-                          return { canAccept: false, reason: '不满足任务条件' };
+
+                          // 检查技能要求
+                          if (task.skill_required) {
+                            const hasSkill = selectedMapDisciple.talents.some(
+                              t => t.talent_type === task.skill_required
+                            );
+                            if (!hasSkill) {
+                              reasons.push(`需要技能: ${task.skill_required}`);
+                            }
+                          }
+
+                          // 检查精力
+                          if (selectedMapDisciple.energy < task.energy_cost) {
+                            reasons.push(`精力不足 (需${task.energy_cost}, 当前${selectedMapDisciple.energy})`);
+                          }
+
+                          // 检查体魄
+                          if (selectedMapDisciple.constitution < task.constitution_cost) {
+                            reasons.push(`体魄不足 (需${task.constitution_cost}, 当前${selectedMapDisciple.constitution})`);
+                          }
+
+                          // 检查战斗任务的修为要求
+                          if (task.task_type.startsWith('Combat') && task.enemy_info) {
+                            // 简化的修为等级映射
+                            const cultivationLevelMap: Record<string, number> = {
+                              '练气': 1, '筑基': 2, '金丹': 3, '元婴': 4,
+                              '化神': 5, '炼虚': 6, '合体': 7, '大乘': 8, '渡劫': 9
+                            };
+                            const discipleLevel = cultivationLevelMap[selectedMapDisciple.cultivation.level] || 1;
+                            if (discipleLevel < task.enemy_info.enemy_level) {
+                              reasons.push(`修为不足 (需等级${task.enemy_info.enemy_level}, 当前${selectedMapDisciple.cultivation.level}=${discipleLevel})`);
+                            }
+                          }
+
+                          if (reasons.length > 0) {
+                            return { canAccept: false, reason: reasons.join('; ') };
+                          }
+
+                          // 如果没有发现具体原因，根据任务类型给出提示
+                          if (task.task_type.startsWith('Exploration')) {
+                            // 探索任务需要 修为等级*10 >= danger_level
+                            const cultivationLevelMap: Record<string, number> = {
+                              '练气': 1, '筑基': 2, '金丹': 3, '元婴': 4,
+                              '化神': 5, '炼虚': 6, '合体': 7, '大乘': 8, '渡劫': 9
+                            };
+                            const discipleLevel = cultivationLevelMap[selectedMapDisciple.cultivation.level] || 1;
+                            return { canAccept: false, reason: `探索任务可能修为不足 (当前${selectedMapDisciple.cultivation.level}=${discipleLevel})` };
+                          }
+
+                          return { canAccept: false, reason: '请刷新任务列表后重试' };
                         };
 
                         const acceptableTasks = tasksAtPosition.filter(t => getTaskStatus(t).canAccept);
@@ -1069,6 +1220,140 @@ const FullscreenMapView: React.FC<FullscreenMapViewProps> = ({
                   gameId={gameId}
                   onResourcesChanged={onTaskAssigned}
                 />
+              </div>
+            )}
+
+            {panelTab === 'alchemy' && (
+              <div style={{ padding: '0.5rem' }}>
+                {alchemyMessage && (
+                  <div style={{
+                    padding: '0.5rem 0.75rem',
+                    borderRadius: '6px',
+                    marginBottom: '0.75rem',
+                    background: alchemyMessage.type === 'success' ? '#d1fae5' : '#fee2e2',
+                    color: alchemyMessage.type === 'success' ? '#047857' : '#dc2626',
+                    border: `1px solid ${alchemyMessage.type === 'success' ? '#34d399' : '#f87171'}`,
+                    fontSize: '0.9rem'
+                  }}>
+                    {alchemyMessage.text}
+                  </div>
+                )}
+
+                {alchemyLoading ? (
+                  <div style={{ textAlign: 'center', padding: '1rem', color: '#666' }}>加载中...</div>
+                ) : (
+                  <>
+                    {/* 草药仓库 */}
+                    <div style={{ marginBottom: '1rem' }}>
+                      <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '1rem', color: '#374151' }}>
+                        🌿 草药仓库 ({herbInventory?.total_count || 0})
+                      </h4>
+                      {herbInventory && herbInventory.herbs.length > 0 ? (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                          {herbInventory.herbs.map((herb, idx) => (
+                            <div key={idx} style={{
+                              padding: '0.4rem 0.6rem',
+                              background: '#fff',
+                              border: `2px solid ${getQualityColor(herb.quality)}`,
+                              borderRadius: '6px',
+                              fontSize: '0.85rem'
+                            }}>
+                              <span style={{ fontWeight: 600 }}>{herb.name}</span>
+                              <span style={{ color: getQualityColor(herb.quality), marginLeft: '0.25rem' }}>
+                                ({herb.quality})
+                              </span>
+                              <span style={{ color: '#6b7280', marginLeft: '0.25rem' }}>x{herb.count}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div style={{
+                          padding: '1rem',
+                          background: '#f9fafb',
+                          borderRadius: '6px',
+                          color: '#9ca3af',
+                          textAlign: 'center',
+                          border: '1px dashed #d1d5db',
+                          fontSize: '0.9rem'
+                        }}>
+                          暂无草药，派遣弟子去采集吧
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 炼丹配方 */}
+                    <div>
+                      <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '1rem', color: '#374151' }}>
+                        🧪 炼丹配方
+                      </h4>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                        {recipes.map((recipe) => (
+                          <div key={recipe.pill_type} style={{
+                            padding: '0.75rem',
+                            background: recipe.can_craft ? '#f0fdf4' : '#f9fafb',
+                            border: `1px solid ${recipe.can_craft ? '#34d399' : '#e5e7eb'}`,
+                            borderRadius: '8px'
+                          }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
+                              <span style={{ fontWeight: 700, color: '#1f2937' }}>{recipe.name}</span>
+                              <span style={{
+                                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                                color: 'white',
+                                padding: '0.15rem 0.4rem',
+                                borderRadius: '4px',
+                                fontSize: '0.75rem',
+                                fontWeight: 600
+                              }}>
+                                {Math.round(recipe.success_rate * 100)}%
+                              </span>
+                            </div>
+                            <div style={{ fontSize: '0.8rem', color: '#6b7280', marginBottom: '0.5rem' }}>
+                              {recipe.description}
+                            </div>
+                            <div style={{ fontSize: '0.8rem', color: '#9ca3af', marginBottom: '0.5rem' }}>
+                              需要: {recipe.required_herb_count}x
+                              <span style={{ color: getQualityColor(recipe.required_herb_quality) }}>
+                                {recipe.required_herb_quality}
+                              </span>
+                              草药 + {recipe.resource_cost}资源
+                            </div>
+                            {!recipe.can_craft && recipe.reason && (
+                              <div style={{
+                                fontSize: '0.75rem',
+                                color: '#dc2626',
+                                background: '#fef2f2',
+                                padding: '0.25rem 0.5rem',
+                                borderRadius: '4px',
+                                marginBottom: '0.5rem'
+                              }}>
+                                {recipe.reason}
+                              </div>
+                            )}
+                            <button
+                              onClick={() => handleRefine(recipe.pill_type)}
+                              disabled={!recipe.can_craft || alchemyLoading}
+                              style={{
+                                width: '100%',
+                                padding: '0.4rem',
+                                border: 'none',
+                                borderRadius: '6px',
+                                fontWeight: 600,
+                                fontSize: '0.85rem',
+                                cursor: recipe.can_craft ? 'pointer' : 'not-allowed',
+                                background: recipe.can_craft
+                                  ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
+                                  : '#d1d5db',
+                                color: recipe.can_craft ? 'white' : '#6b7280'
+                              }}
+                            >
+                              {alchemyLoading ? '炼制中...' : '炼制'}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
             )}
           </div>

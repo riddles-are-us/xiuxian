@@ -197,7 +197,10 @@ impl InteractiveGame {
         // 6. 地图更新
         self.map.update();
 
-        // 7. 检查守卫任务有效性（妖魔是否已离开）
+        // 7. 同步战斗任务位置与怪物位置
+        self.sync_combat_task_positions();
+
+        // 8. 检查守卫任务有效性（妖魔是否已离开）
         self.check_and_remove_invalid_defense_tasks();
 
         if !self.is_web_mode {
@@ -811,6 +814,26 @@ impl InteractiveGame {
                     }
                 } else {
                     UI::info(&format!("{} 选择继续修炼，等待时机", name));
+                }
+            }
+        }
+    }
+
+    /// 同步战斗任务位置与怪物位置
+    /// 当怪物移动后，更新相关战斗任务的位置
+    fn sync_combat_task_positions(&mut self) {
+        // 遍历所有战斗任务
+        for task in &mut self.current_tasks {
+            if let crate::task::TaskType::Combat(combat_task) = &task.task_type {
+                // 从 enemy_name 中提取怪物ID（格式："{名称}#{ID}"）
+                if let Some(id_str) = combat_task.enemy_name.split('#').nth(1) {
+                    if let Ok(monster_id) = id_str.parse::<usize>() {
+                        // 查找怪物的当前位置
+                        if let Some(monster_pos) = self.map.get_monster_position(monster_id) {
+                            // 更新任务位置
+                            task.position = Some(monster_pos);
+                        }
+                    }
                 }
             }
         }

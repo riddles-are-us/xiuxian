@@ -167,6 +167,11 @@ const MapView: React.FC<MapViewProps> = ({
         if (terrainType === 'Plain') return '🌾';
         return '🗺️';
       }
+      case 'Herb': {
+        // 根据成熟度显示不同图标
+        if (details?.is_mature) return '🌿';
+        return '🌱';
+      }
       default: return '?';
     }
   };
@@ -180,6 +185,7 @@ const MapView: React.FC<MapViewProps> = ({
       case 'SecretRealm': return 'tile-secret';
       case 'Monster': return 'tile-monster';
       case 'Terrain': return 'tile-terrain';
+      case 'Herb': return 'tile-herb';
       default: return 'tile-empty';
     }
   };

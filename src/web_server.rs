@@ -85,6 +85,11 @@ pub fn create_router() -> Router {
         .route("/api/game/:game_id/pills", get(get_pill_inventory))
         .route("/api/game/:game_id/pills/use", post(use_pill))
 
+        // 草药和炼丹
+        .route("/api/game/:game_id/herbs", get(get_herb_inventory))
+        .route("/api/game/:game_id/recipes", get(get_all_recipes))
+        .route("/api/game/:game_id/refine", post(refine_pill))
+
         // 建筑
         .route("/api/game/:game_id/buildings", get(get_building_tree))
         .route("/api/game/:game_id/buildings/build", post(build_building))
@@ -519,19 +524,25 @@ async fn move_disciple(
     if let Some(game_mutex) = store.get_game(&game_id) {
         let mut game = game_mutex.lock().await;
 
-        // 查找弟子
-        if let Some(disciple) = game.sect.disciples.iter_mut().find(|d| d.id == disciple_id) {
-            let old_position = PositionDto {
-                x: disciple.position.x,
-                y: disciple.position.y,
-            };
+        // 查找弟子并获取所需信息
+        let disciple_info = game.sect.disciples.iter().find(|d| d.id == disciple_id).map(|d| {
+            (
+                d.position.x,
+                d.position.y,
+                d.name.clone(),
+                d.cultivation.current_level.movement_range(),
+                d.moves_remaining,
+            )
+        });
+
+        if let Some((old_x, old_y, disciple_name, max_range, moves_remaining)) = disciple_info {
+            let old_position = PositionDto { x: old_x, y: old_y };
 
             // 计算距离（曼哈顿距离）
-            let distance = ((req.x as i32 - disciple.position.x as i32).abs()
-                + (req.y as i32 - disciple.position.y as i32).abs()) as u32;
+            let distance = ((req.x as i32 - old_x as i32).abs()
+                + (req.y as i32 - old_y as i32).abs()) as u32;
 
             // 检查移动距离是否在范围内
-            let max_range = disciple.cultivation.current_level.movement_range();
             if distance > max_range {
                 return (
                     StatusCode::BAD_REQUEST,
@@ -539,48 +550,74 @@ async fn move_disciple(
                         "MOVEMENT_OUT_OF_RANGE".to_string(),
                         format!(
                             "移动距离({})超出范围！{}的最大移动距离为{}格",
-                            distance, disciple.name, max_range
+                            distance, disciple_name, max_range
                         ),
                     )),
                 );
             }
 
             // 检查本回合剩余移动距离
-            if distance > disciple.moves_remaining {
+            if distance > moves_remaining {
                 return (
                     StatusCode::BAD_REQUEST,
                     Json(ApiResponse::<MoveDiscipleResponse>::error(
                         "INSUFFICIENT_MOVES".to_string(),
                         format!(
                             "本回合移动距离不足！需要{}格，剩余{}格",
-                            distance, disciple.moves_remaining
+                            distance, moves_remaining
                         ),
                     )),
                 );
             }
 
-            // 扣除移动距离
-            disciple.moves_remaining -= distance;
+            // 更新弟子位置和移动距离
+            if let Some(disciple) = game.sect.disciples.iter_mut().find(|d| d.id == disciple_id) {
+                disciple.moves_remaining -= distance;
+                let new_position = crate::map::Position { x: req.x, y: req.y };
+                disciple.move_to(new_position);
+            }
 
-            // 更新位置
-            let new_position = crate::map::Position {
-                x: req.x,
-                y: req.y,
-            };
-            disciple.move_to(new_position);
+            // 检查并采集草药
+            let mut collected_herb: Option<CollectedHerbInfo> = None;
+            let mut herb_to_collect: Option<(String, crate::map::HerbQuality)> = None;
+            let mut herb_index_to_remove: Option<usize> = None;
 
-            let new_position_dto = PositionDto {
-                x: req.x,
-                y: req.y,
+            for (idx, positioned) in game.map.elements.iter().enumerate() {
+                if positioned.position.x == req.x && positioned.position.y == req.y {
+                    if let crate::map::MapElement::Herb(herb) = &positioned.element {
+                        herb_to_collect = Some((herb.name.clone(), herb.quality));
+                        herb_index_to_remove = Some(idx);
+                        break;
+                    }
+                }
+            }
+
+            // 移除草药并添加到仓库
+            if let (Some(idx), Some((herb_name, herb_quality))) = (herb_index_to_remove, herb_to_collect) {
+                game.map.elements.remove(idx);
+                game.sect.add_herb(&herb_name, herb_quality);
+                collected_herb = Some(CollectedHerbInfo {
+                    name: herb_name,
+                    quality: herb_quality.name().to_string(),
+                });
+            }
+
+            let new_position_dto = PositionDto { x: req.x, y: req.y };
+
+            let message = if let Some(ref herb) = collected_herb {
+                format!("{}已移动至({}, {})，采集了{}({})", disciple_name, req.x, req.y, herb.name, herb.quality)
+            } else {
+                format!("{}已移动至({}, {})", disciple_name, req.x, req.y)
             };
 
             let response = MoveDiscipleResponse {
                 success: true,
-                message: format!("{}已移动至({}, {})", disciple.name, req.x, req.y),
-                disciple_id: disciple.id,
-                disciple_name: disciple.name.clone(),
+                message,
+                disciple_id,
+                disciple_name,
                 old_position,
                 new_position: new_position_dto,
+                collected_herb,
             };
 
             (StatusCode::OK, Json(ApiResponse::ok(response)))
@@ -1150,6 +1187,17 @@ async fn get_map(
                             terrain_type: format!("{:?}", t.terrain_type),
                         },
                     ),
+                    MapElement::Herb(h) => (
+                        "Herb".to_string(),
+                        h.name.clone(),
+                        MapElementDetails::Herb {
+                            herb_id: format!("herb_{}", h.id),
+                            quality: h.quality.name().to_string(),
+                            growth_stage: h.growth_stage,
+                            max_growth: h.max_growth,
+                            is_mature: h.is_mature(),
+                        },
+                    ),
                 };
 
                 MapElementDto {
@@ -1312,6 +1360,157 @@ async fn use_pill(
         (
             StatusCode::NOT_FOUND,
             Json(ApiResponse::<UsePillResponse>::error(
+                "GAME_NOT_FOUND".to_string(),
+                "游戏不存在".to_string(),
+            )),
+        )
+    }
+}
+
+/// 获取草药仓库
+async fn get_herb_inventory(
+    State(store): State<AppState>,
+    Path(game_id): Path<String>,
+) -> impl IntoResponse {
+    if let Some(game_mutex) = store.get_game(&game_id) {
+        let game = game_mutex.lock().await;
+
+        let herbs_list = game.sect.herb_inventory.get_all();
+        let total_count = game.sect.herb_inventory.total_count();
+
+        let herbs: Vec<HerbEntryDto> = herbs_list
+            .iter()
+            .map(|h| HerbEntryDto {
+                name: h.name.clone(),
+                quality: h.quality.name().to_string(),
+                count: h.count,
+            })
+            .collect();
+
+        let response = HerbInventoryResponse { total_count, herbs };
+
+        (StatusCode::OK, Json(ApiResponse::ok(response)))
+    } else {
+        (
+            StatusCode::NOT_FOUND,
+            Json(ApiResponse::<HerbInventoryResponse>::error(
+                "GAME_NOT_FOUND".to_string(),
+                "游戏不存在".to_string(),
+            )),
+        )
+    }
+}
+
+/// 获取所有炼丹配方
+async fn get_all_recipes(
+    State(store): State<AppState>,
+    Path(game_id): Path<String>,
+) -> impl IntoResponse {
+    if let Some(game_mutex) = store.get_game(&game_id) {
+        let game = game_mutex.lock().await;
+
+        use crate::pill::{PillRecipe, PillType};
+
+        let all_recipes = PillRecipe::all_recipes();
+        let mut recipes: Vec<PillRecipeDto> = Vec::new();
+
+        for recipe in all_recipes {
+            // 检查是否可以炼制
+            let herb_count = game.sect.herb_inventory.count_by_quality(recipe.required_herb_quality);
+            let has_enough_herbs = herb_count >= recipe.required_herb_count;
+            let has_enough_resources = game.sect.resources >= recipe.resource_cost;
+
+            let (can_craft, reason) = if !has_enough_herbs {
+                (false, Some(format!("需要{}个{}品质草药，当前{}个",
+                    recipe.required_herb_count,
+                    recipe.required_herb_quality.name(),
+                    herb_count)))
+            } else if !has_enough_resources {
+                (false, Some(format!("需要{}资源，当前{}资源",
+                    recipe.resource_cost,
+                    game.sect.resources)))
+            } else {
+                (true, None)
+            };
+
+            recipes.push(PillRecipeDto {
+                pill_type: recipe.pill_type.to_string().to_string(),
+                name: recipe.pill_type.name().to_string(),
+                description: recipe.pill_type.description().to_string(),
+                required_herb_quality: recipe.required_herb_quality.name().to_string(),
+                required_herb_count: recipe.required_herb_count,
+                resource_cost: recipe.resource_cost,
+                success_rate: recipe.success_rate,
+                output_count: recipe.output_count,
+                can_craft,
+                reason,
+            });
+        }
+
+        let response = AllRecipesResponse { recipes };
+
+        (StatusCode::OK, Json(ApiResponse::ok(response)))
+    } else {
+        (
+            StatusCode::NOT_FOUND,
+            Json(ApiResponse::<AllRecipesResponse>::error(
+                "GAME_NOT_FOUND".to_string(),
+                "游戏不存在".to_string(),
+            )),
+        )
+    }
+}
+
+/// 炼制丹药
+async fn refine_pill(
+    State(store): State<AppState>,
+    Path(game_id): Path<String>,
+    Json(req): Json<RefinePillRequest>,
+) -> impl IntoResponse {
+    if let Some(game_mutex) = store.get_game(&game_id) {
+        let mut game = game_mutex.lock().await;
+
+        use crate::pill::PillType;
+
+        // 解析丹药类型
+        let pill_type = match PillType::from_str(&req.pill_type) {
+            Some(pt) => pt,
+            None => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(ApiResponse::<RefinePillResponse>::error(
+                        "INVALID_PILL_TYPE".to_string(),
+                        "无效的丹药类型".to_string(),
+                    )),
+                );
+            }
+        };
+
+        // 尝试炼制
+        match game.sect.refine_pill(pill_type) {
+            Ok(count) => {
+                let response = RefinePillResponse {
+                    success: true,
+                    message: format!("成功炼制{}个{}", count, pill_type.name()),
+                    pill_name: Some(pill_type.name().to_string()),
+                    output_count: Some(count),
+                };
+                (StatusCode::OK, Json(ApiResponse::ok(response)))
+            }
+            Err(msg) => {
+                let response = RefinePillResponse {
+                    success: false,
+                    message: msg.clone(),
+                    pill_name: None,
+                    output_count: None,
+                };
+                (StatusCode::OK, Json(ApiResponse::ok(response)))
+            }
+        }
+    } else {
+        (
+            StatusCode::NOT_FOUND,
+            Json(ApiResponse::<RefinePillResponse>::error(
                 "GAME_NOT_FOUND".to_string(),
                 "游戏不存在".to_string(),
             )),

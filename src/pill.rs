@@ -1,3 +1,140 @@
+use crate::map::HerbQuality;
+use std::collections::HashMap;
+
+/// 草药仓库中的草药条目
+#[derive(Debug, Clone)]
+pub struct HerbEntry {
+    pub name: String,
+    pub quality: HerbQuality,
+    pub count: u32,
+}
+
+/// 草药仓库
+#[derive(Debug, Clone)]
+pub struct HerbInventory {
+    /// 按 (名称, 品质) 存储草药
+    herbs: HashMap<(String, HerbQuality), u32>,
+}
+
+impl HerbInventory {
+    pub fn new() -> Self {
+        Self {
+            herbs: HashMap::new(),
+        }
+    }
+
+    /// 添加草药
+    pub fn add(&mut self, name: &str, quality: HerbQuality, count: u32) {
+        let key = (name.to_string(), quality);
+        *self.herbs.entry(key).or_insert(0) += count;
+    }
+
+    /// 获取特定草药数量
+    pub fn get_count(&self, name: &str, quality: HerbQuality) -> u32 {
+        self.herbs.get(&(name.to_string(), quality)).copied().unwrap_or(0)
+    }
+
+    /// 消耗草药（返回是否成功）
+    pub fn consume(&mut self, name: &str, quality: HerbQuality, count: u32) -> bool {
+        let key = (name.to_string(), quality);
+        if let Some(current) = self.herbs.get_mut(&key) {
+            if *current >= count {
+                *current -= count;
+                if *current == 0 {
+                    self.herbs.remove(&key);
+                }
+                return true;
+            }
+        }
+        false
+    }
+
+    /// 获取所有草药列表
+    pub fn get_all(&self) -> Vec<HerbEntry> {
+        self.herbs.iter()
+            .filter(|(_, &count)| count > 0)
+            .map(|((name, quality), &count)| HerbEntry {
+                name: name.clone(),
+                quality: *quality,
+                count,
+            })
+            .collect()
+    }
+
+    /// 获取总草药数量
+    pub fn total_count(&self) -> u32 {
+        self.herbs.values().sum()
+    }
+
+    /// 按品质统计草药数量
+    pub fn count_by_quality(&self, quality: HerbQuality) -> u32 {
+        self.herbs.iter()
+            .filter(|((_, q), _)| *q == quality)
+            .map(|(_, &count)| count)
+            .sum()
+    }
+}
+
+/// 丹药配方
+#[derive(Debug, Clone)]
+pub struct PillRecipe {
+    pub pill_type: PillType,
+    pub required_herb_quality: HerbQuality,  // 需要的草药品质
+    pub required_herb_count: u32,            // 需要的草药数量
+    pub resource_cost: u32,                  // 额外资源消耗
+    pub success_rate: f64,                   // 炼制成功率
+    pub output_count: u32,                   // 成功产出数量
+}
+
+impl PillRecipe {
+    /// 获取所有丹药配方
+    pub fn all_recipes() -> Vec<PillRecipe> {
+        vec![
+            // 回气丹：2个普通草药
+            PillRecipe {
+                pill_type: PillType::QiRecovery,
+                required_herb_quality: HerbQuality::Common,
+                required_herb_count: 2,
+                resource_cost: 20,
+                success_rate: 0.9,
+                output_count: 1,
+            },
+            // 健体丹：2个普通草药
+            PillRecipe {
+                pill_type: PillType::BodyStrength,
+                required_herb_quality: HerbQuality::Common,
+                required_herb_count: 2,
+                resource_cost: 20,
+                success_rate: 0.9,
+                output_count: 1,
+            },
+            // 元气丹：2个良品草药
+            PillRecipe {
+                pill_type: PillType::VitalityElixir,
+                required_herb_quality: HerbQuality::Uncommon,
+                required_herb_count: 2,
+                resource_cost: 50,
+                success_rate: 0.8,
+                output_count: 1,
+            },
+            // 修炼丹：1个稀有草药 + 2个良品草药
+            PillRecipe {
+                pill_type: PillType::CultivationBoost,
+                required_herb_quality: HerbQuality::Rare,
+                required_herb_count: 1,
+                resource_cost: 100,
+                success_rate: 0.7,
+                output_count: 1,
+            },
+        ]
+    }
+
+    /// 根据丹药类型获取配方
+    pub fn for_pill(pill_type: PillType) -> Option<PillRecipe> {
+        Self::all_recipes().into_iter().find(|r| r.pill_type == pill_type)
+    }
+}
+
 /// 丹药类型
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PillType {

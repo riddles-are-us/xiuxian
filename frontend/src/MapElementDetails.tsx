@@ -18,6 +18,11 @@ export const getElementIcon = (elementType: string, details?: any): string => {
       if (terrainType === 'Plain') return '🌾';
       return '🗺️';
     }
+    case 'Herb': {
+      // 根据成熟度显示不同图标
+      if (details?.is_mature) return '🌿';
+      return '🌱';
+    }
     default: return '?';
   }
 };
@@ -191,6 +196,70 @@ export const renderElementDetails = (element: MapElement) => {
           </span>
         </div>
       );
+    case 'Herb': {
+      const qualityColors: { [key: string]: string } = {
+        '普通': '#718096',
+        '良品': '#48bb78',
+        '稀有': '#4299e1',
+        '珍品': '#9f7aea',
+        '仙品': '#f6ad55',
+      };
+      const qualityColor = qualityColors[details.quality || '普通'] || '#718096';
+      const growthPercent = Math.round((details.growth_stage || 0) / (details.max_growth || 100) * 100);
+
+      return (
+        <>
+          <div className="detail-row">
+            <span className="detail-label">品质:</span>
+            <span className="detail-value" style={{ color: qualityColor, fontWeight: 'bold' }}>
+              {details.quality || '普通'}
+            </span>
+          </div>
+          <div className="detail-row">
+            <span className="detail-label">生长度:</span>
+            <span className="detail-value">
+              <span style={{
+                display: 'inline-block',
+                width: '60px',
+                height: '8px',
+                backgroundColor: '#e2e8f0',
+                borderRadius: '4px',
+                marginRight: '6px',
+                verticalAlign: 'middle'
+              }}>
+                <span style={{
+                  display: 'block',
+                  width: `${growthPercent}%`,
+                  height: '100%',
+                  backgroundColor: details.is_mature ? '#48bb78' : '#667eea',
+                  borderRadius: '4px'
+                }}></span>
+              </span>
+              {growthPercent}%
+            </span>
+          </div>
+          <div className="detail-row">
+            <span className="detail-label">状态:</span>
+            <span className="detail-value" style={{
+              color: details.is_mature ? '#48bb78' : '#ed8936',
+              fontWeight: 'bold'
+            }}>
+              {details.is_mature ? '✓ 成熟' : '生长中...'}
+            </span>
+          </div>
+          <div style={{
+            marginTop: '8px',
+            padding: '8px',
+            backgroundColor: '#fffaf0',
+            borderRadius: '4px',
+            fontSize: '12px',
+            color: '#744210'
+          }}>
+            💡 怪物路过时会吞噬草药提升等级
+          </div>
+        </>
+      );
+    }
     default:
       return null;
   }

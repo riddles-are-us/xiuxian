@@ -84,6 +84,11 @@
   opacity: 0.8;
 }
 
+.tile-herb {
+  background: linear-gradient(135deg, #c6f6d5 0%, #68d391 100%);
+  border-color: #38a169;
+}
+
 .tile-hovered {
   border-width: 2px;
   border-color: #4299e1;
