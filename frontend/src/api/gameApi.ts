@@ -178,6 +178,7 @@ export interface PillInfo {
   description: string;
   energy_restore: number;
   constitution_restore: number;
+  cultivation_boost: number;
 }
 
 export interface PillInventory {
@@ -192,6 +193,8 @@ export interface UsePillResponse {
   energy_after: number;
   constitution_before: number;
   constitution_after: number;
+  progress_before: number;
+  progress_after: number;
 }
 
 export interface BuildingDto {

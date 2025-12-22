@@ -461,6 +461,7 @@ pub struct PillInfo {
     pub description: String,
     pub energy_restore: u32,
     pub constitution_restore: u32,
+    pub cultivation_boost: u32,
 }
 
 /// 服用丹药请求
@@ -480,6 +481,8 @@ pub struct UsePillResponse {
     pub energy_after: u32,
     pub constitution_before: u32,
     pub constitution_after: u32,
+    pub progress_before: u32,
+    pub progress_after: u32,
 }
 
 /// 建筑DTO

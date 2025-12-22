@@ -1763,7 +1763,9 @@ const FullscreenMapView: React.FC<FullscreenMapViewProps> = ({
                               borderRadius: '6px',
                               marginBottom: '0.75rem'
                             }}>
-                              效果: 精力+{pill.energy_restore} 体魄+{pill.constitution_restore}
+                              效果: {pill.energy_restore > 0 && `精力+${pill.energy_restore} `}
+                              {pill.constitution_restore > 0 && `体魄+${pill.constitution_restore} `}
+                              {pill.cultivation_boost > 0 && `修为进度+${pill.cultivation_boost}`}
                             </div>
                             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                               <select
@@ -1781,7 +1783,9 @@ const FullscreenMapView: React.FC<FullscreenMapViewProps> = ({
                                 <option value="">选择弟子服用...</option>
                                 {disciples.map(d => (
                                   <option key={d.id} value={d.id}>
-                                    {d.name} (精力:{d.energy}/100 体魄:{d.constitution}/100)
+                                    {d.name} ({pill.cultivation_boost > 0
+                                      ? `修为:${d.cultivation.progress}% ${d.cultivation.level} ${d.cultivation.sub_level}`
+                                      : `精力:${d.energy}/100 体魄:${d.constitution}/100`})
                                   </option>
                                 ))}
                               </select>

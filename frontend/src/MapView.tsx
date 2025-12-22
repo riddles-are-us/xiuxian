@@ -18,6 +18,16 @@ interface MapViewProps {
   isPanning?: boolean;
 }
 
+// 等轴测常量
+const TILE_WIDTH = 80;   // 菱形宽度
+const TILE_HEIGHT = 40;  // 菱形高度
+
+// 笛卡尔坐标转等轴测屏幕坐标
+const toIsometric = (x: number, y: number) => ({
+  screenX: (x - y) * (TILE_WIDTH / 2),
+  screenY: (x + y) * (TILE_HEIGHT / 2)
+});
+
 const MapView: React.FC<MapViewProps> = ({
   mapData,
   disciples,
@@ -34,6 +44,11 @@ const MapView: React.FC<MapViewProps> = ({
 }) => {
   const [hoveredPosition, setHoveredPosition] = useState<{x: number, y: number} | null>(null);
   const [selectedDisciple, setSelectedDisciple] = useState<Disciple | null>(null);
+
+  // 计算地图容器尺寸
+  const mapContainerWidth = (mapData.width + mapData.height) * (TILE_WIDTH / 2);
+  const mapContainerHeight = (mapData.width + mapData.height) * (TILE_HEIGHT / 2);
+  const centerOffsetX = mapData.height * (TILE_WIDTH / 2);
 
   // 当弟子数据更新时，同步更新选中的弟子状态（保持选中但更新数据）
   useEffect(() => {
@@ -377,15 +392,16 @@ const MapView: React.FC<MapViewProps> = ({
     <div className="map-view-container">
       <div className="map-grid-wrapper">
         <div
-          className="map-grid"
+          className="iso-map-container"
           onMouseDown={onMapMouseDown}
           style={{
-            gridTemplateColumns: `repeat(${mapData.width}, 1fr)`,
-            gridTemplateRows: `repeat(${mapData.height}, 1fr)`,
+            width: mapContainerWidth,
+            height: mapContainerHeight + TILE_HEIGHT,
             transform: transform ? `translate(${transform.x}px, ${transform.y}px)` : undefined,
             transition: isPanning ? 'none' : 'transform 0.3s ease-out',
             cursor: isPanning ? 'grabbing' : 'grab',
-            userSelect: 'none'
+            userSelect: 'none',
+            position: 'relative'
           }}
         >
           {Array.from({ length: mapData.height }).map((_, y) =>
@@ -415,86 +431,55 @@ const MapView: React.FC<MapViewProps> = ({
                 }
               }
 
+              // 等轴测坐标转换
+              const { screenX, screenY } = toIsometric(x, y);
+
+              // 根据状态获取额外的类名
+              const stateClasses = [
+                element ? getElementColorClass(element.element_type) : 'tile-empty',
+                isHovered ? 'iso-hovered' : '',
+                isSelected ? 'iso-selected' : '',
+                isInRange && !isSelected ? 'iso-in-range' : '',
+                isOutOfRange && !isPendingPath ? 'iso-out-of-range' : '',
+                isPendingPath ? 'iso-pending-path' : '',
+                isPathDestination ? 'iso-path-destination' : '',
+                underAttack ? 'iso-under-attack' : '',
+                isInvading ? 'iso-invading' : ''
+              ].filter(Boolean).join(' ');
+
               return (
                 <div
                   key={`${x}-${y}`}
-                  className={`map-tile ${element ? getElementColorClass(element.element_type) : 'tile-empty'} ${isHovered ? 'tile-hovered' : ''} ${isSelected ? 'tile-selected' : ''}`}
+                  className={`iso-tile ${stateClasses}`}
                   onClick={() => handleTileClick(x, y)}
                   onMouseEnter={() => setHoveredPosition({x, y})}
                   onMouseLeave={() => setHoveredPosition(null)}
                   title={element ? element.name : `(${x}, ${y})`}
                   style={{
-                    border: isSelected ? '3px solid #4299e1' :
-                            isPathDestination ? '3px dashed #f59e0b' :
-                            isPendingPath ? '2px dashed #f59e0b' :
-                            underAttack ? `2px solid ${underAttack.is_demon ? '#c53030' : '#ed8936'}` :
-                            isInvading ? '2px solid #fc8181' : undefined,
-                    boxShadow: isSelected ? '0 0 15px #4299e1' :
-                               isPathDestination ? '0 0 10px #f59e0b' :
-                               underAttack ? `0 0 10px ${underAttack.is_demon ? '#c53030' : '#ed8936'}` :
-                               isInvading ? '0 0 10px #fc8181' : undefined,
-                    backgroundColor: isPendingPath ? 'rgba(245, 158, 11, 0.3)' :
-                                     isInRange && !isSelected ? 'rgba(66, 153, 225, 0.2)' :
-                                     isOutOfRange ? 'rgba(0, 0, 0, 0.3)' : undefined,
-                    cursor: selectedDisciple ? (isInRange || !isOutOfRange ? 'pointer' : 'pointer') : (disciplesHere.length > 0 || element) ? 'pointer' : 'default',
-                    opacity: isOutOfRange && !isPendingPath ? 0.5 : 1
+                    left: screenX + centerOffsetX,
+                    top: screenY,
+                    zIndex: x + y + (disciplesHere.length > 0 ? 100 : 0) + (isHovered ? 200 : 0),
+                    cursor: 'pointer'
                   }}
                 >
-                  {element && (
-                    <span className="tile-icon">{getElementIcon(element.element_type, element.details)}</span>
-                  )}
-                  {disciplesHere.length > 0 && (
-                    <span style={{
-                      position: 'absolute',
-                      fontSize: '24px',
-                      fontWeight: 'bold',
-                      zIndex: 10,
-                      textShadow: '0 0 3px white, 0 0 5px white'
-                    }}>
-                      🧙
-                    </span>
-                  )}
-                  {disciplesHere.length > 1 && (
-                    <span style={{
-                      position: 'absolute',
-                      bottom: '2px',
-                      right: '2px',
-                      fontSize: '10px',
-                      backgroundColor: '#4299e1',
-                      color: 'white',
-                      borderRadius: '50%',
-                      width: '16px',
-                      height: '16px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontWeight: 'bold',
-                      zIndex: 11
-                    }}>
-                      {disciplesHere.length}
-                    </span>
-                  )}
-                  {underAttack && (
-                    <span style={{
-                      position: 'absolute',
-                      top: '2px',
-                      right: '2px',
-                      fontSize: '12px'
-                    }}>
-                      {underAttack.is_demon ? '⚠️' : '🛡️'}
-                    </span>
-                  )}
-                  {isInvading && !underAttack && (
-                    <span style={{
-                      position: 'absolute',
-                      top: '2px',
-                      right: '2px',
-                      fontSize: '12px'
-                    }}>
-                      ⚔️
-                    </span>
-                  )}
-                  <span className="tile-coords">{x},{y}</span>
+                  <div className="iso-tile-content">
+                    {element && (
+                      <span className="iso-icon">{getElementIcon(element.element_type, element.details)}</span>
+                    )}
+                    {disciplesHere.length > 0 && (
+                      <span className="iso-disciple">🧙</span>
+                    )}
+                    {disciplesHere.length > 1 && (
+                      <span className="iso-disciple-count">{disciplesHere.length}</span>
+                    )}
+                    {underAttack && (
+                      <span className="iso-alert">{underAttack.is_demon ? '⚠️' : '🛡️'}</span>
+                    )}
+                    {isInvading && !underAttack && (
+                      <span className="iso-alert">⚔️</span>
+                    )}
+                  </div>
+                  <span className="iso-coords">{x},{y}</span>
                 </div>
               );
             })

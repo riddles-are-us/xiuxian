@@ -1257,6 +1257,7 @@ async fn get_pill_inventory(
                     description: pill_type.description().to_string(),
                     energy_restore: effects.energy_restore,
                     constitution_restore: effects.constitution_restore,
+                    cultivation_boost: effects.cultivation_boost,
                 },
             );
         }
@@ -1330,11 +1331,17 @@ async fn use_pill(
             let name = disciple.name.clone();
             let energy_before = disciple.energy;
             let constitution_before = disciple.constitution;
+            let progress_before = disciple.cultivation.progress;
 
             // 应用效果
             let effects = pill_type.effects();
             disciple.restore_energy(effects.energy_restore);
             disciple.restore_constitution(effects.constitution_restore);
+
+            // 应用修为进度加成
+            if effects.cultivation_boost > 0 {
+                disciple.cultivation.add_progress(effects.cultivation_boost);
+            }
 
             let response = UsePillResponse {
                 success: true,
@@ -1344,6 +1351,8 @@ async fn use_pill(
                 energy_after: disciple.energy,
                 constitution_before,
                 constitution_after: disciple.constitution,
+                progress_before,
+                progress_after: disciple.cultivation.progress,
             };
 
             (StatusCode::OK, Json(ApiResponse::ok(response)))

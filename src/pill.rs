@@ -182,7 +182,7 @@ impl PillType {
             PillType::QiRecovery => "恢复30点精力",
             PillType::BodyStrength => "恢复30点体魄",
             PillType::VitalityElixir => "恢复20点精力和20点体魄",
-            PillType::CultivationBoost => "增加修炼进度（未实现）",
+            PillType::CultivationBoost => "增加10点修炼进度",
         }
     }
 
