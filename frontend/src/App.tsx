@@ -102,9 +102,15 @@ function App() {
       turnResult.task_results.forEach(result => {
         const task = currentTasksMap.get(result.task_id);
         const taskName = task?.name || '未知任务';
-        const discipleName = disciples.find(d => d.id === result.disciple_id)?.name || '弟子';
+        const discipleName = result.disciple_name || disciples.find(d => d.id === result.disciple_id)?.name || '弟子';
 
-        if (result.success) {
+        if (result.disciple_died) {
+          // 弟子死亡通知
+          addNotification(
+            `💀 ${discipleName} 在执行任务「${taskName}」时陨落`,
+            'error'
+          );
+        } else if (result.success) {
           addNotification(
             `✅ ${discipleName} 完成了任务「${taskName}」！获得修为+${result.rewards?.progress || 0}`,
             'success'

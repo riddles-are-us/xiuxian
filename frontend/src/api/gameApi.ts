@@ -297,6 +297,7 @@ export interface TaskEligibilityResponse {
 export interface TaskResultDto {
   task_id: number;
   disciple_id: number;
+  disciple_name: string;
   success: boolean;
   rewards: {
     progress: number;
@@ -304,6 +305,7 @@ export interface TaskResultDto {
     reputation: number;
   } | null;
   message: string;
+  disciple_died: boolean;  // 弟子是否死亡
 }
 
 // 回合结束响应

@@ -340,26 +340,22 @@ async fn end_turn(
         let results: Vec<TaskResultDto> = task_results
             .iter()
             .map(|result| {
-                // 获取弟子名称
-                let disciple_name = game.sect.disciples
-                    .iter()
-                    .find(|d| d.id == result.disciple_id)
-                    .map(|d| d.name.clone())
-                    .unwrap_or_else(|| "未知弟子".to_string());
-
-                let message = if result.success {
+                let message = if result.disciple_died {
+                    format!("{} 在战斗中陨落", result.disciple_name)
+                } else if result.success {
                     format!("{} 成功完成任务！获得修为+{}, 资源+{}, 声望+{}",
-                        disciple_name,
+                        result.disciple_name,
                         result.progress_gained,
                         result.resources_gained,
                         result.reputation_gained)
                 } else {
-                    format!("{} 执行任务失败", disciple_name)
+                    format!("{} 执行任务失败", result.disciple_name)
                 };
 
                 TaskResultDto {
                     task_id: result.task_id,
                     disciple_id: result.disciple_id,
+                    disciple_name: result.disciple_name.clone(),
                     success: result.success,
                     rewards: if result.success {
                         Some(TaskRewards {
@@ -371,6 +367,7 @@ async fn end_turn(
                         None
                     },
                     message,
+                    disciple_died: result.disciple_died,
                 }
             })
             .collect();

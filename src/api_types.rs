@@ -350,9 +350,11 @@ pub struct TurnEndResponse {
 pub struct TaskResultDto {
     pub task_id: usize,
     pub disciple_id: usize,
+    pub disciple_name: String,
     pub success: bool,
     pub rewards: Option<TaskRewards>,
     pub message: String,
+    pub disciple_died: bool,  // 弟子是否死亡
 }
 
 /// 统计信息响应

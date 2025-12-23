@@ -34,10 +34,12 @@ pub enum GameEvent {
 pub struct TaskResult {
     pub task_id: usize,
     pub disciple_id: usize,
+    pub disciple_name: String,
     pub success: bool,
     pub resources_gained: u32,
     pub reputation_gained: i32,
     pub progress_gained: u32,
+    pub disciple_died: bool,  // 弟子是否死亡（战斗任务失败）
 }
 
 /// 事件系统

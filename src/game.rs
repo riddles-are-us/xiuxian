@@ -139,10 +139,12 @@ impl Game {
                 let result = TaskResult {
                     task_id: task.id,
                     disciple_id,
+                    disciple_name: disciple.name.clone(),
                     success: true,
                     resources_gained: task.resource_reward,
                     reputation_gained: task.reputation_reward,
                     progress_gained,
+                    disciple_died: false,
                 };
 
                 self.event_system

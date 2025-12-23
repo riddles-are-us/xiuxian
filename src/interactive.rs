@@ -681,6 +681,9 @@ impl InteractiveGame {
         let disciple = self.sect.disciples.iter().find(|d| d.id == disciple_id);
         let disciple_name = disciple.map(|d| d.name.clone()).unwrap_or_default();
 
+        // 判断是否是战斗任务
+        let is_combat_task = matches!(&task.task_type, crate::task::TaskType::Combat(_));
+
         // 根据任务类型计算成功率
         let success_rate = if let Some(d) = disciple {
             task.calculate_combat_success_rate(d)
@@ -737,30 +740,56 @@ impl InteractiveGame {
                 TaskResult {
                     task_id: task.id,
                     disciple_id,
+                    disciple_name: disciple_name.clone(),
                     success: true,
                     resources_gained: task.resource_reward,
                     reputation_gained: task.reputation_reward,
                     progress_gained,
+                    disciple_died: false,
                 }
             } else {
                 TaskResult {
                     task_id: task.id,
                     disciple_id,
+                    disciple_name: disciple_name.clone(),
                     success: false,
                     resources_gained: 0,
                     reputation_gained: 0,
                     progress_gained: 0,
+                    disciple_died: false,
                 }
             }
         } else {
-            println!("❌ {} 执行任务 [{}] 失败", disciple_name, task.name);
+            // 战斗任务失败，弟子死亡
+            let disciple_died = if is_combat_task {
+                if let Some(disciple) = self
+                    .sect
+                    .disciples
+                    .iter_mut()
+                    .find(|d| d.id == disciple_id)
+                {
+                    disciple.constitution = 0;  // 设置体魄为0，标记死亡
+                    // 处理弟子死亡（生成传承等）
+                    self.sect.handle_disciple_death(disciple_id);
+                    println!("💀 {} 在执行任务 [{}] 时陨落", disciple_name, task.name);
+                    true
+                } else {
+                    false
+                }
+            } else {
+                println!("❌ {} 执行任务 [{}] 失败", disciple_name, task.name);
+                false
+            };
+
             TaskResult {
                 task_id: task.id,
                 disciple_id,
+                disciple_name: disciple_name.clone(),
                 success: false,
                 resources_gained: 0,
                 reputation_gained: 0,
                 progress_gained: 0,
+                disciple_died,
             }
         }
     }
