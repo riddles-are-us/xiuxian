@@ -88,7 +88,8 @@ pub struct Task {
     pub energy_cost: u32,       // 精力消耗（每回合）
     pub constitution_cost: u32, // 体魄消耗（每回合）
     pub location_id: Option<String>, // 任务关联的地点ID（用于确保同一地点同一类型任务唯一性）
-    pub position: Option<Position>,  // 任务位置（需要弟子到达才能执行）
+    pub position: Option<Position>,  // 任务主位置（用于显示）
+    pub valid_positions: Option<Vec<Position>>,  // 所有有效位置（用于大型建筑，弟子在任意位置都可接取）
     pub max_participants: u32,  // 最大参与人数（1=单人任务，>1=多人任务）
 }
 
@@ -124,6 +125,7 @@ impl Task {
             constitution_cost,
             location_id: None,  // 默认无地点关联
             position: None,     // 默认无位置要求
+            valid_positions: None,  // 默认无多位置支持
             max_participants,
         }
     }
@@ -163,8 +165,25 @@ impl Task {
             constitution_cost,
             location_id: None,  // 默认无地点关联
             position: None,     // 默认无位置要求
+            valid_positions: None,  // 默认无多位置支持
             max_participants,
         }
+    }
+
+    /// 检查弟子是否在任务的有效位置上
+    pub fn is_disciple_at_valid_position(&self, disciple_pos: &Position) -> bool {
+        // 首先检查 valid_positions（大型建筑）
+        if let Some(positions) = &self.valid_positions {
+            return positions.iter().any(|pos|
+                pos.x == disciple_pos.x && pos.y == disciple_pos.y
+            );
+        }
+        // 然后检查单个 position
+        if let Some(pos) = &self.position {
+            return pos.x == disciple_pos.x && pos.y == disciple_pos.y;
+        }
+        // 没有位置要求，返回 true
+        true
     }
 
     /// 检查任务是否已失效

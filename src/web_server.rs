@@ -288,6 +288,9 @@ async fn start_turn(
                     },
                     enemy_info,
                     position: task.position.as_ref().map(|p| PositionDto { x: p.x, y: p.y }),
+                    valid_positions: task.valid_positions.as_ref().map(|positions|
+                        positions.iter().map(|p| PositionDto { x: p.x, y: p.y }).collect()
+                    ),
                 }
             })
             .collect();
@@ -301,12 +304,20 @@ async fn start_turn(
         // 获取待招募弟子信息
         let pending_recruitment = game.pending_recruitment.as_ref().map(|d| d.into());
 
+        // 获取宗门袭击状态
+        let sect_invasion = game.map.get_sect_invasion().map(|inv| SectInvasionDto {
+            monster_id: inv.monster_id,
+            monster_name: inv.monster_name.clone(),
+            turns_remaining: inv.turns_remaining,
+        });
+
         let response = TurnStartResponse {
             year: game.sect.year,
             events,
             tasks,
             disciples,
             pending_recruitment,
+            sect_invasion,
         };
 
         (StatusCode::OK, Json(ApiResponse::ok(response)))
@@ -758,6 +769,9 @@ async fn get_tasks(
                     },
                     enemy_info,
                     position: task.position.as_ref().map(|p| PositionDto { x: p.x, y: p.y }),
+                    valid_positions: task.valid_positions.as_ref().map(|positions|
+                        positions.iter().map(|p| PositionDto { x: p.x, y: p.y }).collect()
+                    ),
                 }
             })
             .collect();
@@ -798,19 +812,28 @@ async fn assign_task(
                     );
                 }
 
-                // 检查弟子是否在任务位置
-                if let Some(task_pos) = &task.position {
-                    if disciple.position.x != task_pos.x || disciple.position.y != task_pos.y {
-                        return (
-                            StatusCode::BAD_REQUEST,
-                            Json(ApiResponse::<AssignTaskResponse>::error(
-                                "DISCIPLE_NOT_AT_LOCATION".to_string(),
-                                format!("弟子 {} 不在任务位置({}, {})，当前位置({}, {})",
-                                    disciple.name, task_pos.x, task_pos.y,
-                                    disciple.position.x, disciple.position.y),
-                            )),
-                        );
-                    }
+                // 检查弟子是否在任务的有效位置（支持大型建筑的多位置）
+                if task.position.is_some() && !task.is_disciple_at_valid_position(&disciple.position) {
+                    let position_hint = if let Some(positions) = &task.valid_positions {
+                        if positions.len() > 1 {
+                            format!("任务区域内任意位置")
+                        } else {
+                            format!("({}, {})", positions[0].x, positions[0].y)
+                        }
+                    } else if let Some(pos) = &task.position {
+                        format!("({}, {})", pos.x, pos.y)
+                    } else {
+                        "未知位置".to_string()
+                    };
+                    return (
+                        StatusCode::BAD_REQUEST,
+                        Json(ApiResponse::<AssignTaskResponse>::error(
+                            "DISCIPLE_NOT_AT_LOCATION".to_string(),
+                            format!("弟子 {} 不在任务位置 {}，当前位置({}, {})",
+                                disciple.name, position_hint,
+                                disciple.position.x, disciple.position.y),
+                        )),
+                    );
                 }
 
                 // 检查任务是否已满
@@ -844,13 +867,13 @@ async fn assign_task(
                     );
                 }
 
-                // 克隆守卫任务相关信息以避免借用冲突
-                let enemy_name_opt = if task.name.contains("守卫") {
-                    if let crate::task::TaskType::Combat(combat_task) = &task.task_type {
-                        Some(combat_task.enemy_name.clone())
-                    } else {
-                        None
-                    }
+                // 克隆战斗任务相关信息以避免借用冲突
+                let combat_info = if let crate::task::TaskType::Combat(combat_task) = &task.task_type {
+                    Some((
+                        combat_task.enemy_id,
+                        combat_task.enemy_name.clone(),
+                        task.name.contains("守卫")
+                    ))
                 } else {
                     None
                 };
@@ -860,9 +883,16 @@ async fn assign_task(
                     assignment.add_disciple(req.disciple_id);
                     let current_count = assignment.disciple_ids.len();
 
-                    // 如果是守卫任务，锁定妖魔的移动
-                    if let Some(enemy_name) = enemy_name_opt {
-                        game.map.lock_monster_for_defense_task(&enemy_name);
+                    // 如果是战斗任务，锁定怪物的移动
+                    if let Some((enemy_id_opt, enemy_name, is_defense_task)) = combat_info {
+                        // 标记怪物正在被战斗
+                        if let Some(enemy_id) = enemy_id_opt {
+                            game.map.set_monster_being_fought(enemy_id, true);
+                        }
+                        // 如果是守卫任务，额外设置 has_active_defense_task
+                        if is_defense_task {
+                            game.map.lock_monster_for_defense_task(&enemy_name);
+                        }
                     }
 
                     let response = AssignTaskResponse {
@@ -920,13 +950,13 @@ async fn unassign_task(
 
         // 检查任务是否存在
         if let Some(task) = game.current_tasks.iter().find(|t| t.id == task_id) {
-            // 克隆守卫任务相关信息以避免借用冲突
-            let enemy_name_opt = if task.name.contains("守卫") {
-                if let crate::task::TaskType::Combat(combat_task) = &task.task_type {
-                    Some(combat_task.enemy_name.clone())
-                } else {
-                    None
-                }
+            // 克隆战斗任务相关信息以避免借用冲突
+            let combat_info = if let crate::task::TaskType::Combat(combat_task) = &task.task_type {
+                Some((
+                    combat_task.enemy_id,
+                    combat_task.enemy_name.clone(),
+                    task.name.contains("守卫")
+                ))
             } else {
                 None
             };
@@ -936,9 +966,16 @@ async fn unassign_task(
                 let removed_count = assignment.disciple_ids.len();
                 assignment.disciple_ids.clear();
 
-                // 如果是守卫任务，解锁妖魔的移动
-                if let Some(enemy_name) = enemy_name_opt {
-                    game.map.unlock_monster_for_defense_task(&enemy_name);
+                // 如果是战斗任务，解锁怪物的移动
+                if let Some((enemy_id_opt, enemy_name, is_defense_task)) = combat_info {
+                    // 清除怪物的战斗状态
+                    if let Some(enemy_id) = enemy_id_opt {
+                        game.map.set_monster_being_fought(enemy_id, false);
+                    }
+                    // 如果是守卫任务，额外清除 has_active_defense_task
+                    if is_defense_task {
+                        game.map.unlock_monster_for_defense_task(&enemy_name);
+                    }
                 }
 
                 (StatusCode::OK, Json(ApiResponse::ok(format!("取消成功，移除了{}名弟子", removed_count))))
@@ -1328,6 +1365,7 @@ async fn get_map(
                         x: positioned.position.x,
                         y: positioned.position.y,
                     },
+                    size: positioned.size.map(|(w, h)| SizeDto { width: w, height: h }),
                     details,
                 }
             })

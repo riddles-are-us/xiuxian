@@ -18,6 +18,8 @@ pub struct VillageTemplate {
     pub population: u32,
     pub prosperity: u32,
     pub position: PositionConfig,
+    #[serde(default)]
+    pub size: Option<SizeConfig>,  // 建筑尺寸，None 表示 1x1
     pub task_templates: Vec<TaskTemplateConfig>,
 }
 
@@ -28,6 +30,8 @@ pub struct FactionTemplate {
     pub power_level: u32,
     pub relationship: i32,
     pub position: PositionConfig,
+    #[serde(default)]
+    pub size: Option<SizeConfig>,  // 建筑尺寸，None 表示 1x1
     pub friendly_task_templates: Vec<TaskTemplateConfig>,
     pub hostile_task_templates: Vec<TaskTemplateConfig>,
 }
@@ -38,6 +42,8 @@ pub struct DangerousLocationTemplate {
     pub name: String,
     pub danger_level: u32,
     pub position: PositionConfig,
+    #[serde(default)]
+    pub size: Option<SizeConfig>,  // 建筑尺寸，None 表示 1x1
     pub task_templates: Vec<TaskTemplateConfig>,
 }
 
@@ -48,6 +54,8 @@ pub struct SecretRealmTemplate {
     pub realm_type: String, // "Fire", "Water", etc.
     pub difficulty: u32,
     pub position: PositionConfig,
+    #[serde(default)]
+    pub size: Option<SizeConfig>,  // 建筑尺寸，None 表示 1x1
     pub task_templates: Vec<TaskTemplateConfig>,
 }
 
@@ -56,6 +64,13 @@ pub struct SecretRealmTemplate {
 pub struct PositionConfig {
     pub x: i32,
     pub y: i32,
+}
+
+/// 尺寸配置（用于大型建筑，如2x2）
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+pub struct SizeConfig {
+    pub width: u32,  // 宽度（格子数）
+    pub height: u32, // 高度（格子数）
 }
 
 /// 任务模板配置
@@ -129,6 +144,7 @@ impl MapElementsConfig {
                     population: 1000,
                     prosperity: 50,
                     position: PositionConfig { x: 5, y: 5 },
+                    size: None,
                     task_templates: vec![
                         TaskTemplateConfig {
                             name_template: "在{name}采集灵药".to_string(),
@@ -161,6 +177,7 @@ impl MapElementsConfig {
                     population: 500,
                     prosperity: 30,
                     position: PositionConfig { x: 15, y: 8 },
+                    size: None,
                     task_templates: vec![
                         TaskTemplateConfig {
                             name_template: "在{name}采集灵泉".to_string(),
@@ -183,6 +200,7 @@ impl MapElementsConfig {
                     power_level: 3,
                     relationship: 20,
                     position: PositionConfig { x: 10, y: 10 },
+                    size: Some(SizeConfig { width: 2, height: 2 }),  // 大型势力建筑
                     friendly_task_templates: vec![
                         TaskTemplateConfig {
                             name_template: "与{name}交流".to_string(),
@@ -218,6 +236,7 @@ impl MapElementsConfig {
                     name: "迷雾森林".to_string(),
                     danger_level: 20,
                     position: PositionConfig { x: 3, y: 15 },
+                    size: None,
                     task_templates: vec![
                         TaskTemplateConfig {
                             name_template: "游历{name}".to_string(),
@@ -240,6 +259,7 @@ impl MapElementsConfig {
                     realm_type: "Fire".to_string(),
                     difficulty: 30,
                     position: PositionConfig { x: 17, y: 3 },
+                    size: Some(SizeConfig { width: 2, height: 2 }),  // 大型秘境
                     task_templates: vec![
                         TaskTemplateConfig {
                             name_template: "探索秘境：{name}".to_string(),

@@ -68,6 +68,10 @@
         "x": 10,
         "y": 10
       },
+      "size": {
+        "width": 2,
+        "height": 2
+      },
       "friendly_task_templates": [
         {
           "name_template": "与{name}交流",
@@ -130,6 +134,10 @@
       "position": {
         "x": 17,
         "y": 3
+      },
+      "size": {
+        "width": 2,
+        "height": 2
       },
       "task_templates": [
         {

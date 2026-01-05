@@ -123,6 +123,15 @@ function App() {
         }
       });
 
+      // 显示宗门被袭击警告
+      if (turnResult.sect_invasion) {
+        const inv = turnResult.sect_invasion;
+        addNotification(
+          `⚠️ 危险！${inv.monster_name} 正在袭击宗门！剩余 ${inv.turns_remaining} 回合`,
+          'error'
+        );
+      }
+
       await loadGameData(gameId);
     } catch (err: any) {
       setError(err.message);

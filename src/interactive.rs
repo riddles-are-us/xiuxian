@@ -642,15 +642,19 @@ impl InteractiveGame {
             // 清除妖魔的任务关联和解锁移动
             self.map.clear_monster_task(task.id);
 
-            // 如果是战斗任务且成功，移除怪物
+            // 如果是战斗任务，处理怪物状态
             if let crate::task::TaskType::Combat(combat_task) = &task.task_type {
                 if let Some(enemy_id) = combat_task.enemy_id {
                     if task_succeeded {
-                        // 讨伐成功，移除怪物
+                        // 讨伐成功，移除怪物（remove_monster_by_id 会自动清除 is_being_fought）
                         self.map.remove_monster_by_id(enemy_id);
-                    } else if task.name.contains("守卫") {
-                        // 守卫任务失败，解锁怪物移动
-                        self.map.unlock_monster_by_id(enemy_id);
+                    } else {
+                        // 任务失败，清除战斗状态，让怪物可以移动
+                        self.map.set_monster_being_fought(enemy_id, false);
+                        if task.name.contains("守卫") {
+                            // 守卫任务失败，额外解锁 has_active_defense_task
+                            self.map.unlock_monster_by_id(enemy_id);
+                        }
                     }
                 }
             }
@@ -992,6 +996,18 @@ impl InteractiveGame {
                 UI::clear_screen();
                 UI::print_title("👹 游戏失败");
                 println!("\n地图上出现了成魔的怪物，天下大乱！");
+                println!("\n游戏用时: {} 年", self.sect.year);
+            }
+            self.state = GameState::Defeat;
+            return false;
+        }
+
+        // 检查宗门是否被怪物摧毁
+        if self.map.update_sect_invasion() {
+            if !self.is_web_mode {
+                UI::clear_screen();
+                UI::print_title("💀 游戏失败");
+                println!("\n宗门被怪物摧毁！");
                 println!("\n游戏用时: {} 年", self.sect.year);
             }
             self.state = GameState::Defeat;

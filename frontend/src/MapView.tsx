@@ -404,86 +404,161 @@ const MapView: React.FC<MapViewProps> = ({
             position: 'relative'
           }}
         >
-          {Array.from({ length: mapData.height }).map((_, y) =>
-            Array.from({ length: mapData.width }).map((_, x) => {
-              const element = getElementAt(x, y);
-              const disciplesHere = getDisciplesAt(x, y);
-              const isHovered = hoveredPosition?.x === x && hoveredPosition?.y === y;
-              const isSelected = selectedDisciple && selectedDisciple.position.x === x && selectedDisciple.position.y === y;
-              const isInRange = selectedDisciple ? isInMovementRange(x, y, selectedDisciple) : false;
-              const isOutOfRange = selectedDisciple && !isInRange && !(selectedDisciple.position.x === x && selectedDisciple.position.y === y);
-
-              const underAttack = element?.details?.under_attack;
-              const isInvading = element?.element_type === 'Monster' && element?.details?.invading_location;
-
-              // 检查是否在待移动路径上
-              let isPendingPath = false;
-              let isPathDestination = false;
-              if (pendingPaths) {
-                const pathEntries = Array.from(pendingPaths.values());
-                for (const path of pathEntries) {
-                  const pathIndex = path.findIndex(p => p.x === x && p.y === y);
-                  if (pathIndex >= 0) {
-                    isPendingPath = true;
-                    isPathDestination = pathIndex === path.length - 1;
-                    break;
+          {/* 收集大型建筑占据的格子 */}
+          {(() => {
+            // 收集大型建筑信息
+            const largeElementCells = new Map<string, MapElement>();
+            mapData.elements.forEach(element => {
+              if (element.size && (element.size.width > 1 || element.size.height > 1)) {
+                for (let dx = 0; dx < element.size.width; dx++) {
+                  for (let dy = 0; dy < element.size.height; dy++) {
+                    if (dx === 0 && dy === 0) continue; // 跳过主位置
+                    const key = `${element.position.x + dx},${element.position.y + dy}`;
+                    largeElementCells.set(key, element);
                   }
                 }
               }
+            });
 
-              // 等轴测坐标转换
-              const { screenX, screenY } = toIsometric(x, y);
+            return Array.from({ length: mapData.height }).map((_, y) =>
+              Array.from({ length: mapData.width }).map((_, x) => {
+                const element = getElementAt(x, y);
+                const disciplesHere = getDisciplesAt(x, y);
+                const isHovered = hoveredPosition?.x === x && hoveredPosition?.y === y;
+                const isSelected = selectedDisciple && selectedDisciple.position.x === x && selectedDisciple.position.y === y;
+                const isInRange = selectedDisciple ? isInMovementRange(x, y, selectedDisciple) : false;
+                const isOutOfRange = selectedDisciple && !isInRange && !(selectedDisciple.position.x === x && selectedDisciple.position.y === y);
 
-              // 根据状态获取额外的类名
-              const stateClasses = [
-                element ? getElementColorClass(element.element_type) : 'tile-empty',
-                isHovered ? 'iso-hovered' : '',
-                isSelected ? 'iso-selected' : '',
-                isInRange && !isSelected ? 'iso-in-range' : '',
-                isOutOfRange && !isPendingPath ? 'iso-out-of-range' : '',
-                isPendingPath ? 'iso-pending-path' : '',
-                isPathDestination ? 'iso-path-destination' : '',
-                underAttack ? 'iso-under-attack' : '',
-                isInvading ? 'iso-invading' : ''
-              ].filter(Boolean).join(' ');
+                const underAttack = element?.details?.under_attack;
+                const isInvading = element?.element_type === 'Monster' && element?.details?.invading_location;
 
-              return (
-                <div
-                  key={`${x}-${y}`}
-                  className={`iso-tile ${stateClasses}`}
-                  onClick={() => handleTileClick(x, y)}
-                  onMouseEnter={() => setHoveredPosition({x, y})}
-                  onMouseLeave={() => setHoveredPosition(null)}
-                  title={element ? element.name : `(${x}, ${y})`}
-                  style={{
-                    left: screenX + centerOffsetX,
-                    top: screenY,
-                    zIndex: x + y + (disciplesHere.length > 0 ? 100 : 0) + (isHovered ? 200 : 0),
-                    cursor: 'pointer'
-                  }}
-                >
-                  <div className="iso-tile-content">
-                    {element && (
-                      <span className="iso-icon">{getElementIcon(element.element_type, element.details)}</span>
-                    )}
-                    {disciplesHere.length > 0 && (
-                      <span className="iso-disciple">🧙</span>
-                    )}
-                    {disciplesHere.length > 1 && (
-                      <span className="iso-disciple-count">{disciplesHere.length}</span>
-                    )}
-                    {underAttack && (
-                      <span className="iso-alert">{underAttack.is_demon ? '⚠️' : '🛡️'}</span>
-                    )}
-                    {isInvading && !underAttack && (
-                      <span className="iso-alert">⚔️</span>
-                    )}
+                // 检查是否在待移动路径上
+                let isPendingPath = false;
+                let isPathDestination = false;
+                if (pendingPaths) {
+                  const pathEntries = Array.from(pendingPaths.values());
+                  for (const path of pathEntries) {
+                    const pathIndex = path.findIndex(p => p.x === x && p.y === y);
+                    if (pathIndex >= 0) {
+                      isPendingPath = true;
+                      isPathDestination = pathIndex === path.length - 1;
+                      break;
+                    }
+                  }
+                }
+
+                // 检查是否是大型建筑的附属格子（非主位置）
+                const cellKey = `${x},${y}`;
+                const isLargeElementSubCell = largeElementCells.has(cellKey);
+
+                // 检查当前元素是否是大型建筑的主位置
+                const isLargeElement = element?.size && (element.size.width > 1 || element.size.height > 1);
+                const largeElementWidth = element?.size?.width || 1;
+                const largeElementHeight = element?.size?.height || 1;
+
+                // 如果是大型建筑的附属格子，渲染一个透明的交互区域
+                if (isLargeElementSubCell) {
+                  const parentElement = largeElementCells.get(cellKey)!;
+                  const { screenX, screenY } = toIsometric(x, y);
+
+                  return (
+                    <div
+                      key={`${x}-${y}`}
+                      className={`iso-tile tile-large-sub ${isInRange && !isSelected ? 'iso-in-range' : ''}`}
+                      onClick={() => {
+                        // 点击附属格子时选中大型建筑
+                        onElementSelected?.(parentElement);
+                        onDiscipleSelected?.(null);
+                      }}
+                      onMouseEnter={() => setHoveredPosition({x, y})}
+                      onMouseLeave={() => setHoveredPosition(null)}
+                      title={parentElement.name}
+                      style={{
+                        left: screenX + centerOffsetX,
+                        top: screenY,
+                        zIndex: x + y,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {/* 附属格子只显示弟子 */}
+                      {disciplesHere.length > 0 && (
+                        <div className="iso-tile-content">
+                          <span className="iso-disciple">🧙</span>
+                          {disciplesHere.length > 1 && (
+                            <span className="iso-disciple-count">{disciplesHere.length}</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
+
+                // 等轴测坐标转换
+                const { screenX, screenY } = toIsometric(x, y);
+
+                // 根据状态获取额外的类名
+                const stateClasses = [
+                  element ? getElementColorClass(element.element_type) : 'tile-empty',
+                  isHovered ? 'iso-hovered' : '',
+                  isSelected ? 'iso-selected' : '',
+                  isInRange && !isSelected ? 'iso-in-range' : '',
+                  isOutOfRange && !isPendingPath ? 'iso-out-of-range' : '',
+                  isPendingPath ? 'iso-pending-path' : '',
+                  isPathDestination ? 'iso-path-destination' : '',
+                  underAttack ? 'iso-under-attack' : '',
+                  isInvading ? 'iso-invading' : '',
+                  isLargeElement ? `iso-large-${largeElementWidth}x${largeElementHeight}` : ''
+                ].filter(Boolean).join(' ');
+
+                // 计算大型建筑的位置偏移（等轴测坐标系中，放大后需要向左偏移以保持上顶点对齐）
+                const largeOffsetX = isLargeElement ? (largeElementWidth - 1) * (TILE_WIDTH / 2) : 0;
+
+                return (
+                  <div
+                    key={`${x}-${y}`}
+                    className={`iso-tile ${stateClasses}`}
+                    onClick={() => handleTileClick(x, y)}
+                    onMouseEnter={() => setHoveredPosition({x, y})}
+                    onMouseLeave={() => setHoveredPosition(null)}
+                    title={element ? element.name : `(${x}, ${y})`}
+                    style={{
+                      left: screenX + centerOffsetX - largeOffsetX,
+                      top: screenY,
+                      zIndex: x + y + (disciplesHere.length > 0 ? 100 : 0) + (isHovered ? 200 : 0) + (isLargeElement ? 50 : 0),
+                      cursor: 'pointer',
+                      // 大型建筑使用更大的尺寸
+                      ...(isLargeElement ? {
+                        width: TILE_WIDTH * largeElementWidth,
+                        height: TILE_HEIGHT * largeElementHeight,
+                      } : {})
+                    }}
+                  >
+                    <div className="iso-tile-content">
+                      {element && (
+                        <span className={`iso-icon ${isLargeElement ? 'iso-icon-large' : ''}`}>
+                          {getElementIcon(element.element_type, element.details)}
+                        </span>
+                      )}
+                      {disciplesHere.length > 0 && (
+                        <span className="iso-disciple">🧙</span>
+                      )}
+                      {disciplesHere.length > 1 && (
+                        <span className="iso-disciple-count">{disciplesHere.length}</span>
+                      )}
+                      {underAttack && (
+                        <span className="iso-alert">{underAttack.is_demon ? '⚠️' : '🛡️'}</span>
+                      )}
+                      {isInvading && !underAttack && (
+                        <span className="iso-alert">⚔️</span>
+                      )}
+                    </div>
+                    {!isLargeElement && <span className="iso-coords">{x},{y}</span>}
+                    {isLargeElement && <span className="iso-coords-large">{element?.name}</span>}
                   </div>
-                  <span className="iso-coords">{x},{y}</span>
-                </div>
-              );
-            })
-          )}
+                );
+              })
+            );
+          })()}
         </div>
       </div>
     </div>

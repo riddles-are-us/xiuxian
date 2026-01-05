@@ -46,6 +46,36 @@ pub struct Position {
 pub struct PositionedElement {
     pub element: MapElement,
     pub position: Position,
+    pub size: Option<(u32, u32)>,  // (width, height)，None 表示 1x1
+}
+
+impl PositionedElement {
+    /// 检查坐标是否在此元素的范围内
+    pub fn contains_position(&self, x: i32, y: i32) -> bool {
+        let (width, height) = self.size.unwrap_or((1, 1));
+        x >= self.position.x && x < self.position.x + width as i32 &&
+        y >= self.position.y && y < self.position.y + height as i32
+    }
+
+    /// 获取元素占据的所有位置
+    pub fn get_all_positions(&self) -> Vec<Position> {
+        let (width, height) = self.size.unwrap_or((1, 1));
+        let mut positions = Vec::new();
+        for dx in 0..width {
+            for dy in 0..height {
+                positions.push(Position {
+                    x: self.position.x + dx as i32,
+                    y: self.position.y + dy as i32,
+                });
+            }
+        }
+        positions
+    }
+
+    /// 获取尺寸（返回 (width, height)，默认 (1, 1)）
+    pub fn get_size(&self) -> (u32, u32) {
+        self.size.unwrap_or((1, 1))
+    }
 }
 
 impl MapElement {
@@ -661,6 +691,14 @@ impl Herb {
     }
 }
 
+/// 宗门被袭击的状态
+#[derive(Debug, Clone)]
+pub struct SectInvasion {
+    pub monster_id: usize,      // 袭击宗门的怪物ID
+    pub monster_name: String,   // 怪物名称
+    pub turns_remaining: u32,   // 剩余回合数（6回合内未消灭则游戏失败）
+}
+
 /// 游戏地图
 #[derive(Debug)]
 pub struct GameMap {
@@ -668,6 +706,8 @@ pub struct GameMap {
     pub width: i32,
     pub height: i32,
     pub config: ConfigManager,
+    pub sect_position: Position,           // 宗门位置
+    pub sect_invasion: Option<SectInvasion>, // 宗门被袭击状态
 }
 
 impl GameMap {
@@ -677,6 +717,8 @@ impl GameMap {
             width: 20,  // 地图宽度
             height: 20, // 地图高度
             config: ConfigManager::create_default(),
+            sect_position: Position { x: 10, y: 10 }, // 宗门位置在地图中心
+            sect_invasion: None,
         }
     }
 
@@ -705,6 +747,7 @@ impl GameMap {
                     x: village_template.position.x,
                     y: village_template.position.y,
                 },
+                size: village_template.size.as_ref().map(|s| (s.width, s.height)),
             });
         }
 
@@ -716,6 +759,7 @@ impl GameMap {
                     x: faction_template.position.x,
                     y: faction_template.position.y,
                 },
+                size: faction_template.size.as_ref().map(|s| (s.width, s.height)),
             });
         }
 
@@ -729,6 +773,7 @@ impl GameMap {
                     x: dangerous_template.position.x,
                     y: dangerous_template.position.y,
                 },
+                size: dangerous_template.size.as_ref().map(|s| (s.width, s.height)),
             });
         }
 
@@ -740,6 +785,7 @@ impl GameMap {
                     x: realm_template.position.x,
                     y: realm_template.position.y,
                 },
+                size: realm_template.size.as_ref().map(|s| (s.width, s.height)),
             });
         }
 
@@ -752,6 +798,7 @@ impl GameMap {
                         x: pos.x,
                         y: pos.y,
                     },
+                    size: None,  // 妖魔不支持大尺寸
                 });
             }
         }
@@ -780,6 +827,7 @@ impl GameMap {
                 self.elements.push(PositionedElement {
                     element: MapElement::Herb(Herb::new_random()),
                     position: Position { x, y },
+                    size: None,
                 });
             }
         }
@@ -810,6 +858,7 @@ impl GameMap {
                     name: name.to_string(),
                 }),
                 position: Position { x, y },
+                size: None,
             });
         }
     }
@@ -825,6 +874,11 @@ impl GameMap {
             // 为所有从此位置生成的任务设置位置
             for task in &mut element_tasks {
                 task.position = Some(positioned.position);
+                // 为大型建筑设置所有有效位置
+                let all_positions = positioned.get_all_positions();
+                if all_positions.len() > 1 {
+                    task.valid_positions = Some(all_positions);
+                }
             }
 
             // 如果是妖魔任务，需要记录任务ID
@@ -897,6 +951,7 @@ impl GameMap {
                 self.elements.push(PositionedElement {
                     element: MapElement::Monster(Monster::new(name, level, task_templates)),
                     position: Position { x, y },
+                    size: None,
                 });
             }
         }
@@ -923,6 +978,7 @@ impl GameMap {
                 self.elements.push(PositionedElement {
                     element: MapElement::Herb(Herb::new_random()),
                     position: Position { x, y },
+                    size: None,
                 });
             }
         }
@@ -931,29 +987,98 @@ impl GameMap {
     /// 妖魔行动（移动或修行）
     fn monster_actions(&mut self) {
         use rand::Rng;
+        use rand::seq::SliceRandom;
         let mut rng = rand::thread_rng();
         let mut move_actions = Vec::new(); // (monster_index, new_position)
 
-        for (i, positioned) in self.elements.iter_mut().enumerate() {
-            if let MapElement::Monster(monster) = &mut positioned.element {
-                // 如果妖魔正在被战斗或有正在执行的守卫任务，则不能行动
-                if monster.is_being_fought || monster.has_active_defense_task {
-                    continue;
+        // 收集所有草药位置
+        let herb_positions: Vec<Position> = self.elements.iter()
+            .filter_map(|e| {
+                if matches!(e.element, MapElement::Herb(_)) {
+                    Some(e.position)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        let sect_pos = self.sect_position;
+
+        // 收集怪物信息
+        let monster_infos: Vec<(usize, Position, bool, bool)> = self.elements.iter()
+            .enumerate()
+            .filter_map(|(i, e)| {
+                if let MapElement::Monster(m) = &e.element {
+                    Some((i, e.position, m.is_being_fought, m.has_active_defense_task))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        for (i, monster_pos, is_being_fought, has_active_defense_task) in monster_infos {
+            // 如果妖魔正在被战斗或有正在执行的守卫任务，则不能行动
+            if is_being_fought || has_active_defense_task {
+                continue;
+            }
+
+            // 50% 概率选择移动，50% 概率选择修行
+            if rng.gen_bool(0.5) {
+                // 计算目标方向（草药或宗门）
+                let target = self.find_monster_target(&monster_pos, &herb_positions, &sect_pos);
+
+                // 根据目标计算移动方向的权重
+                let directions = [(0, 1), (0, -1), (1, 0), (-1, 0)];
+                let mut weighted_directions: Vec<((i32, i32), u32)> = Vec::new();
+
+                for (dx, dy) in directions.iter() {
+                    let new_x = (monster_pos.x + dx).max(0).min(self.width - 1);
+                    let new_y = (monster_pos.y + dy).max(0).min(self.height - 1);
+
+                    if let Some(target_pos) = &target {
+                        // 计算移动后到目标的距离
+                        let new_dist = (new_x - target_pos.x).abs() + (new_y - target_pos.y).abs();
+                        let old_dist = (monster_pos.x - target_pos.x).abs() + (monster_pos.y - target_pos.y).abs();
+
+                        // 如果靠近目标，给予更高权重
+                        let weight = if new_dist < old_dist {
+                            5  // 靠近目标：权重5
+                        } else if new_dist == old_dist {
+                            2  // 保持距离：权重2
+                        } else {
+                            1  // 远离目标：权重1
+                        };
+                        weighted_directions.push(((*dx, *dy), weight));
+                    } else {
+                        // 没有目标，随机移动
+                        weighted_directions.push(((*dx, *dy), 1));
+                    }
                 }
 
-                // 50% 概率选择移动，50% 概率选择修行
-                if rng.gen_bool(0.5) {
-                    // 移动：随机选择相邻位置
-                    let directions = [(0, 1), (0, -1), (1, 0), (-1, 0)];
-                    let (dx, dy) = directions[rng.gen_range(0..directions.len())];
-                    let new_x = (positioned.position.x + dx).max(0).min(self.width - 1);
-                    let new_y = (positioned.position.y + dy).max(0).min(self.height - 1);
+                // 按权重随机选择方向
+                let total_weight: u32 = weighted_directions.iter().map(|(_, w)| w).sum();
+                let mut choice = rng.gen_range(0..total_weight);
+                let mut selected_dir = (0, 0);
 
-                    move_actions.push((i, Position { x: new_x, y: new_y }));
-                } else {
-                    // 修行：提升等级
-                    if rng.gen_bool(0.3) {  // 30% 概率成功修行
-                        monster.grow();
+                for ((dx, dy), weight) in weighted_directions {
+                    if choice < weight {
+                        selected_dir = (dx, dy);
+                        break;
+                    }
+                    choice -= weight;
+                }
+
+                let new_x = (monster_pos.x + selected_dir.0).max(0).min(self.width - 1);
+                let new_y = (monster_pos.y + selected_dir.1).max(0).min(self.height - 1);
+
+                move_actions.push((i, Position { x: new_x, y: new_y }));
+            } else {
+                // 修行：提升等级
+                if let Some(positioned) = self.elements.get_mut(i) {
+                    if let MapElement::Monster(monster) = &mut positioned.element {
+                        if rng.gen_bool(0.3) {  // 30% 概率成功修行
+                            monster.grow();
+                        }
                     }
                 }
             }
@@ -964,8 +1089,9 @@ impl GameMap {
             if let Some(positioned) = self.elements.get_mut(monster_index) {
                 positioned.position = new_position;
 
-                // 检查是否移动到了可入侵的地点
+                // 检查是否移动到了宗门位置（袭击宗门）
                 if matches!(positioned.element, MapElement::Monster(_)) {
+                    self.check_sect_invasion(monster_index, new_position);
                     self.check_monster_invasion(monster_index, new_position);
                 }
             }
@@ -973,6 +1099,64 @@ impl GameMap {
 
         // 怪物吞噬草药（在移动后检查）
         self.monsters_consume_herbs();
+    }
+
+    /// 寻找怪物的目标（最近的草药或宗门）
+    fn find_monster_target(&self, monster_pos: &Position, herb_positions: &[Position], sect_pos: &Position) -> Option<Position> {
+        use rand::Rng;
+        let mut rng = rand::thread_rng();
+
+        // 找最近的草药
+        let nearest_herb = herb_positions.iter()
+            .min_by_key(|h| (h.x - monster_pos.x).abs() + (h.y - monster_pos.y).abs());
+
+        // 计算到宗门和最近草药的距离
+        let sect_dist = (sect_pos.x - monster_pos.x).abs() + (sect_pos.y - monster_pos.y).abs();
+
+        if let Some(herb_pos) = nearest_herb {
+            let herb_dist = (herb_pos.x - monster_pos.x).abs() + (herb_pos.y - monster_pos.y).abs();
+
+            // 70% 概率选择更近的目标，30% 概率随机
+            if rng.gen_bool(0.7) {
+                if herb_dist <= sect_dist {
+                    Some(*herb_pos)
+                } else {
+                    Some(*sect_pos)
+                }
+            } else {
+                // 随机选择草药或宗门
+                if rng.gen_bool(0.5) {
+                    Some(*herb_pos)
+                } else {
+                    Some(*sect_pos)
+                }
+            }
+        } else {
+            // 没有草药，向宗门移动
+            Some(*sect_pos)
+        }
+    }
+
+    /// 检查怪物是否袭击宗门
+    fn check_sect_invasion(&mut self, monster_index: usize, new_position: Position) {
+        if new_position.x == self.sect_position.x && new_position.y == self.sect_position.y {
+            // 已经有怪物在袭击宗门，不再添加
+            if self.sect_invasion.is_some() {
+                return;
+            }
+
+            // 获取怪物信息
+            if let Some(positioned) = self.elements.get(monster_index) {
+                if let MapElement::Monster(monster) = &positioned.element {
+                    println!("⚠️ 警告：{} 已抵达宗门！6回合内必须消灭它，否则游戏失败！", monster.name);
+                    self.sect_invasion = Some(SectInvasion {
+                        monster_id: monster.id,
+                        monster_name: monster.name.clone(),
+                        turns_remaining: 6,
+                    });
+                }
+            }
+        }
     }
 
     /// 怪物吞噬所在位置的草药
@@ -1149,6 +1333,14 @@ impl GameMap {
 
     /// 移除指定ID的怪物（当讨伐任务成功时调用）
     pub fn remove_monster_by_id(&mut self, monster_id: usize) {
+        // 如果这个怪物正在袭击宗门，清除袭击状态
+        if let Some(ref invasion) = self.sect_invasion {
+            if invasion.monster_id == monster_id {
+                println!("✅ 宗门危机解除！{} 已被消灭", invasion.monster_name);
+                self.sect_invasion = None;
+            }
+        }
+
         self.elements.retain(|positioned| {
             if let MapElement::Monster(monster) = &positioned.element {
                 monster.id != monster_id
@@ -1164,6 +1356,18 @@ impl GameMap {
             if let MapElement::Monster(monster) = &mut positioned.element {
                 if monster.id == monster_id {
                     monster.has_active_defense_task = false;
+                    return;
+                }
+            }
+        }
+    }
+
+    /// 标记怪物正在被战斗（当战斗任务被分配时调用）
+    pub fn set_monster_being_fought(&mut self, monster_id: usize, is_fighting: bool) {
+        for positioned in &mut self.elements {
+            if let MapElement::Monster(monster) = &mut positioned.element {
+                if monster.id == monster_id {
+                    monster.is_being_fought = is_fighting;
                     return;
                 }
             }
@@ -1220,6 +1424,32 @@ impl GameMap {
                 false
             }
         })
+    }
+
+    /// 更新宗门袭击倒计时，返回是否游戏结束
+    pub fn update_sect_invasion(&mut self) -> bool {
+        if let Some(ref mut invasion) = self.sect_invasion {
+            if invasion.turns_remaining > 0 {
+                invasion.turns_remaining -= 1;
+                println!("⚠️ {} 正在袭击宗门！剩余 {} 回合", invasion.monster_name, invasion.turns_remaining);
+
+                if invasion.turns_remaining == 0 {
+                    println!("💀 宗门被 {} 摧毁！游戏失败！", invasion.monster_name);
+                    return true; // 游戏结束
+                }
+            }
+        }
+        false
+    }
+
+    /// 获取宗门袭击状态（用于前端显示）
+    pub fn get_sect_invasion(&self) -> Option<&SectInvasion> {
+        self.sect_invasion.as_ref()
+    }
+
+    /// 检查宗门是否被袭击
+    pub fn is_sect_under_attack(&self) -> bool {
+        self.sect_invasion.is_some()
     }
 }
 

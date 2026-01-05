@@ -205,6 +205,52 @@
   text-shadow: 0 1px 1px rgba(0, 0, 0, 0.5);
 }
 
+/* 大型建筑样式 */
+.iso-large-2x2 {
+  clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
+  box-shadow:
+    inset 0 -4px 8px rgba(0,0,0,0.4),
+    0 4px 12px rgba(0,0,0,0.3);
+}
+
+.iso-large-2x2::before {
+  clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
+  border-width: 2px;
+}
+
+/* 大型建筑图标 */
+.iso-icon-large {
+  font-size: 2rem !important;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.6);
+}
+
+/* 大型建筑名称标签 */
+.iso-coords-large {
+  position: absolute;
+  bottom: 8px;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.9);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+  font-weight: bold;
+  white-space: nowrap;
+}
+
+/* 大型建筑附属格子样式 */
+.tile-large-sub {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.tile-large-sub::before {
+  border: none !important;
+}
+
+/* 附属格子的弟子显示 */
+.tile-large-sub .iso-tile-content {
+  position: relative;
+  z-index: 100;
+}
+
 .element-details-panel {
   width: 320px;
   background: white;

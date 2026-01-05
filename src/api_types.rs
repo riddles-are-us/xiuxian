@@ -272,7 +272,8 @@ pub struct TaskDto {
     pub skill_required: Option<String>,  // 需要的技能
     pub suitable_disciples: SuitableDisciples,  // 合适的弟子
     pub enemy_info: Option<EnemyInfo>,  // 敌人信息（战斗任务，包含唯一ID）
-    pub position: Option<PositionDto>,  // 任务位置（需要弟子到达才能执行）
+    pub position: Option<PositionDto>,  // 任务主位置（用于显示）
+    pub valid_positions: Option<Vec<PositionDto>>,  // 所有有效位置（用于大型建筑）
 }
 
 /// 敌人信息（用于定位地图上的具体怪物）
@@ -311,6 +312,14 @@ pub struct AssignTaskResponse {
     pub message: String,
 }
 
+/// 宗门被袭击状态
+#[derive(Debug, Serialize, Clone)]
+pub struct SectInvasionDto {
+    pub monster_id: usize,        // 袭击宗门的怪物ID
+    pub monster_name: String,     // 怪物名称
+    pub turns_remaining: u32,     // 剩余回合数
+}
+
 /// 回合开始响应
 #[derive(Debug, Serialize)]
 pub struct TurnStartResponse {
@@ -319,6 +328,7 @@ pub struct TurnStartResponse {
     pub tasks: Vec<TaskDto>,
     pub disciples: Vec<DiscipleDto>,
     pub pending_recruitment: Option<DiscipleDto>,  // 待招募的弟子（需要确认）
+    pub sect_invasion: Option<SectInvasionDto>,    // 宗门被袭击状态
 }
 
 #[derive(Debug, Serialize)]
@@ -413,6 +423,7 @@ pub struct MapElementDto {
     pub element_type: String,
     pub name: String,
     pub position: PositionDto,
+    pub size: Option<SizeDto>,  // 建筑尺寸，None 表示 1x1
     pub details: MapElementDetails,
 }
 
@@ -420,6 +431,13 @@ pub struct MapElementDto {
 pub struct PositionDto {
     pub x: i32,
     pub y: i32,
+}
+
+/// 尺寸DTO（用于大型建筑）
+#[derive(Debug, Serialize, Clone)]
+pub struct SizeDto {
+    pub width: u32,
+    pub height: u32,
 }
 
 #[derive(Debug, Serialize, Clone)]

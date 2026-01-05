@@ -117,10 +117,14 @@ export interface Task {
     enemy_name: string;       // 怪物名称
     enemy_level: number;      // 怪物等级
   } | null;
-  position: {                 // 任务位置
+  position: {                 // 任务主位置（用于显示）
     x: number;
     y: number;
   } | null;
+  valid_positions?: {          // 所有有效位置（用于大型建筑）
+    x: number;
+    y: number;
+  }[];
 }
 
 export interface AttackInfo {
@@ -135,6 +139,10 @@ export interface MapElement {
   position: {
     x: number;
     y: number;
+  };
+  size?: {
+    width: number;
+    height: number;
   };
   details: {
     type: string;
@@ -314,10 +322,18 @@ export interface TurnEndResponse {
   game_state: string;
 }
 
+// 宗门被袭击状态
+export interface SectInvasionDto {
+  monster_id: number;
+  monster_name: string;
+  turns_remaining: number;
+}
+
 // 下一回合结果
 export interface NextTurnResult {
   task_results: TaskResultDto[];
   pending_recruitment: Disciple | null;
+  sect_invasion: SectInvasionDto | null;  // 宗门被袭击状态
 }
 
 export const gameApi = {
@@ -405,7 +421,8 @@ export const gameApi = {
 
     return {
       task_results: turnEndData.results,
-      pending_recruitment: startTurnData.pending_recruitment
+      pending_recruitment: startTurnData.pending_recruitment,
+      sect_invasion: startTurnData.sect_invasion || null
     };
   },
 
