@@ -1,0 +1,174 @@
+{
+  "buildings": [
+    {
+      "id": "main_hall",
+      "name": "宗门大殿",
+      "description": "宗门的核心建筑，象征着宗门的威严",
+      "base_cost": 100,
+      "parent_id": null,
+      "modifiers": [
+        {
+          "name": "大殿威严",
+          "target": { "type": "Income" },
+          "application": { "type": "Multiplicative", "value": 0.1 },
+          "source": "System",
+          "condition": { "type": "Always" },
+          "priority": 0
+        }
+      ]
+    },
+    {
+      "id": "library",
+      "name": "藏书楼",
+      "description": "收藏功法典籍，提升弟子修炼速度",
+      "base_cost": 150,
+      "parent_id": "main_hall",
+      "modifiers": [
+        {
+          "name": "功法加成",
+          "target": { "type": "CultivationSpeed" },
+          "application": { "type": "Multiplicative", "value": 0.15 },
+          "source": "System",
+          "condition": { "type": "Always" },
+          "priority": 0
+        }
+      ]
+    },
+    {
+      "id": "alchemy_room",
+      "name": "炼丹房",
+      "description": "炼制丹药，帮助弟子恢复精力",
+      "base_cost": 150,
+      "parent_id": "main_hall",
+      "modifiers": [
+        {
+          "name": "丹药滋养",
+          "target": { "type": "EnergyConsumption" },
+          "application": { "type": "Multiplicative", "value": -0.2 },
+          "source": "System",
+          "condition": { "type": "Always" },
+          "priority": 0
+        }
+      ]
+    },
+    {
+      "id": "training_ground",
+      "name": "演武场",
+      "description": "弟子切磋武艺之处，强健体魄",
+      "base_cost": 150,
+      "parent_id": "main_hall",
+      "modifiers": [
+        {
+          "name": "体魄强化",
+          "target": { "type": "ConstitutionConsumption" },
+          "application": { "type": "Multiplicative", "value": -0.2 },
+          "source": "System",
+          "condition": { "type": "Always" },
+          "priority": 0
+        }
+      ]
+    },
+    {
+      "id": "heavenly_pavilion",
+      "name": "天机阁",
+      "description": "推演天机，内门弟子任务奖励提升",
+      "base_cost": 200,
+      "parent_id": "library",
+      "modifiers": [
+        {
+          "name": "天机加持",
+          "target": { "type": "TaskReward" },
+          "application": { "type": "Multiplicative", "value": 0.25 },
+          "source": "System",
+          "condition": { "type": "DiscipleTypeEquals", "disciple_type": "Inner" },
+          "priority": 0
+        }
+      ]
+    },
+    {
+      "id": "spirit_garden",
+      "name": "灵药园",
+      "description": "种植灵药，增加宗门收入",
+      "base_cost": 200,
+      "parent_id": "alchemy_room",
+      "modifiers": [
+        {
+          "name": "灵药收益",
+          "target": { "type": "Income" },
+          "application": { "type": "Multiplicative", "value": 0.2 },
+          "source": "System",
+          "condition": { "type": "Always" },
+          "priority": 0
+        }
+      ]
+    },
+    {
+      "id": "weapon_forge",
+      "name": "炼器坊",
+      "description": "炼制法宝，提升战斗能力",
+      "base_cost": 200,
+      "parent_id": "training_ground",
+      "modifiers": [
+        {
+          "name": "法宝加成",
+          "target": { "type": "TaskSuitability" },
+          "application": { "type": "Additive", "value": 5.0 },
+          "source": "System",
+          "condition": { "type": "Always" },
+          "priority": 0
+        }
+      ]
+    },
+    {
+      "id": "heritage_hall",
+      "name": "传承殿",
+      "description": "存放宗门至高传承，亲传弟子修炼速度大幅提升",
+      "base_cost": 300,
+      "parent_id": "heavenly_pavilion",
+      "modifiers": [
+        {
+          "name": "传承之力",
+          "target": { "type": "CultivationSpeed" },
+          "application": { "type": "Multiplicative", "value": 0.5 },
+          "source": "System",
+          "condition": { "type": "DiscipleTypeEquals", "disciple_type": "Personal" },
+          "priority": 0
+        }
+      ]
+    },
+    {
+      "id": "spirit_array",
+      "name": "聚灵阵",
+      "description": "汇聚天地灵气，筑基期以上弟子修炼速度提升",
+      "base_cost": 300,
+      "parent_id": "spirit_garden",
+      "modifiers": [
+        {
+          "name": "灵气滋养",
+          "target": { "type": "CultivationSpeed" },
+          "application": { "type": "Multiplicative", "value": 0.3 },
+          "source": "System",
+          "condition": { "type": "CultivationLevelGreaterThan", "level": "QiRefining" },
+          "priority": 0
+        }
+      ]
+    },
+    {
+      "id": "protection_array",
+      "name": "护宗大阵",
+      "description": "守护宗门，提升弟子道心",
+      "base_cost": 300,
+      "parent_id": "weapon_forge",
+      "modifiers": [
+        {
+          "name": "大阵庇护",
+          "target": { "type": "DaoHeart" },
+          "application": { "type": "Additive", "value": 10.0 },
+          "source": "System",
+          "condition": { "type": "Always" },
+          "priority": 0
+        }
+      ]
+    }
+  ]
+}

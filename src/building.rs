@@ -278,231 +278,60 @@ impl Default for BuildingTreeBuilder {
     }
 }
 
-/// 创建默认的修仙宗门建筑树
-pub fn create_default_sect_building_tree() -> BuildingTree {
-    use crate::modifier::{Modifier, ModifierTarget, ModifierApplication, ModifierSource, ModifierCondition};
-    use crate::disciple::DiscipleType;
-    use crate::cultivation::CultivationLevel;
+/// 从配置文件创建宗门建筑树
+pub fn create_sect_building_tree() -> BuildingTree {
+    use crate::config::BuildingsConfig;
 
-    // 根节点：宗门大殿
+    let config = BuildingsConfig::load();
+
+    // 找到根节点（parent_id 为 None 的建筑）
+    let root_config = config.buildings.iter()
+        .find(|b| b.parent_id.is_none())
+        .expect("建筑配置必须包含一个根节点");
+
+    let modifiers: Vec<ConditionalModifier> = root_config.modifiers.iter()
+        .map(|mc| mc.to_conditional_modifier())
+        .collect();
+
     let root = Building::new_root(
-        "main_hall",
-        "宗门大殿",
-        "宗门的核心建筑，象征着宗门的威严",
-        100,
-        vec![
-            ConditionalModifier::new(
-                ModifierCondition::Always,
-                Modifier::new(
-                    "大殿威严",
-                    ModifierTarget::Income,
-                    ModifierApplication::Multiplicative(0.1),
-                    ModifierSource::System,
-                ),
-            ),
-        ],
+        &root_config.id,
+        &root_config.name,
+        &root_config.description,
+        root_config.base_cost,
+        modifiers,
     );
 
     let mut tree = BuildingTree::new(root);
 
-    // 第一层建筑
+    // 添加所有子建筑
+    for bc in &config.buildings {
+        if bc.parent_id.is_some() {
+            let modifiers: Vec<ConditionalModifier> = bc.modifiers.iter()
+                .map(|mc| mc.to_conditional_modifier())
+                .collect();
 
-    // 1. 藏书楼 - 提升修炼速度
-    let library = Building::new_child(
-        "library",
-        "藏书楼",
-        "收藏功法典籍，提升弟子修炼速度",
-        150,
-        "main_hall",
-        vec![
-            ConditionalModifier::new(
-                ModifierCondition::Always,
-                Modifier::new(
-                    "功法加成",
-                    ModifierTarget::CultivationSpeed,
-                    ModifierApplication::Multiplicative(0.15),
-                    ModifierSource::System,
-                ),
-            ),
-        ],
-    );
+            let building = Building::new_child(
+                &bc.id,
+                &bc.name,
+                &bc.description,
+                bc.base_cost,
+                bc.parent_id.as_ref().unwrap(),
+                modifiers,
+            );
 
-    // 2. 炼丹房 - 减少精力消耗
-    let alchemy_room = Building::new_child(
-        "alchemy_room",
-        "炼丹房",
-        "炼制丹药，帮助弟子恢复精力",
-        150,
-        "main_hall",
-        vec![
-            ConditionalModifier::new(
-                ModifierCondition::Always,
-                Modifier::new(
-                    "丹药滋养",
-                    ModifierTarget::EnergyConsumption,
-                    ModifierApplication::Multiplicative(-0.2),
-                    ModifierSource::System,
-                ),
-            ),
-        ],
-    );
-
-    // 3. 演武场 - 减少体魄消耗
-    let training_ground = Building::new_child(
-        "training_ground",
-        "演武场",
-        "弟子切磋武艺之处，强健体魄",
-        150,
-        "main_hall",
-        vec![
-            ConditionalModifier::new(
-                ModifierCondition::Always,
-                Modifier::new(
-                    "体魄强化",
-                    ModifierTarget::ConstitutionConsumption,
-                    ModifierApplication::Multiplicative(-0.2),
-                    ModifierSource::System,
-                ),
-            ),
-        ],
-    );
-
-    // 第二层建筑
-
-    // 4. 天机阁 - 提升内门弟子任务奖励
-    let heavenly_pavilion = Building::new_child(
-        "heavenly_pavilion",
-        "天机阁",
-        "推演天机，内门弟子任务奖励提升",
-        200,
-        "library",
-        vec![
-            ConditionalModifier::new(
-                ModifierCondition::DiscipleTypeEquals(DiscipleType::Inner),
-                Modifier::new(
-                    "天机加持",
-                    ModifierTarget::TaskReward,
-                    ModifierApplication::Multiplicative(0.25),
-                    ModifierSource::System,
-                ),
-            ),
-        ],
-    );
-
-    // 5. 灵药园 - 提升任务收益
-    let spirit_garden = Building::new_child(
-        "spirit_garden",
-        "灵药园",
-        "种植灵药，增加宗门收入",
-        200,
-        "alchemy_room",
-        vec![
-            ConditionalModifier::new(
-                ModifierCondition::Always,
-                Modifier::new(
-                    "灵药收益",
-                    ModifierTarget::Income,
-                    ModifierApplication::Multiplicative(0.2),
-                    ModifierSource::System,
-                ),
-            ),
-        ],
-    );
-
-    // 6. 炼器坊 - 提升战斗任务适配度
-    let weapon_forge = Building::new_child(
-        "weapon_forge",
-        "炼器坊",
-        "炼制法宝，提升战斗能力",
-        200,
-        "training_ground",
-        vec![
-            ConditionalModifier::new(
-                ModifierCondition::Always,
-                Modifier::new(
-                    "法宝加成",
-                    ModifierTarget::TaskSuitability,
-                    ModifierApplication::Additive(5.0),
-                    ModifierSource::System,
-                ),
-            ),
-        ],
-    );
-
-    // 第三层建筑
-
-    // 7. 传承殿 - 大幅提升亲传弟子修炼速度
-    let heritage_hall = Building::new_child(
-        "heritage_hall",
-        "传承殿",
-        "存放宗门至高传承，亲传弟子修炼速度大幅提升",
-        300,
-        "heavenly_pavilion",
-        vec![
-            ConditionalModifier::new(
-                ModifierCondition::DiscipleTypeEquals(DiscipleType::Personal),
-                Modifier::new(
-                    "传承之力",
-                    ModifierTarget::CultivationSpeed,
-                    ModifierApplication::Multiplicative(0.5),
-                    ModifierSource::System,
-                ),
-            ),
-        ],
-    );
-
-    // 8. 聚灵阵 - 筑基期以上弟子修炼速度提升
-    let spirit_array = Building::new_child(
-        "spirit_array",
-        "聚灵阵",
-        "汇聚天地灵气，筑基期以上弟子修炼速度提升",
-        300,
-        "spirit_garden",
-        vec![
-            ConditionalModifier::new(
-                ModifierCondition::CultivationLevelGreaterThan(CultivationLevel::QiRefining),
-                Modifier::new(
-                    "灵气滋养",
-                    ModifierTarget::CultivationSpeed,
-                    ModifierApplication::Multiplicative(0.3),
-                    ModifierSource::System,
-                ),
-            ),
-        ],
-    );
-
-    // 9. 护宗大阵 - 提升所有弟子道心
-    let protection_array = Building::new_child(
-        "protection_array",
-        "护宗大阵",
-        "守护宗门，提升弟子道心",
-        300,
-        "weapon_forge",
-        vec![
-            ConditionalModifier::new(
-                ModifierCondition::Always,
-                Modifier::new(
-                    "大阵庇护",
-                    ModifierTarget::DaoHeart,
-                    ModifierApplication::Additive(10.0),
-                    ModifierSource::System,
-                ),
-            ),
-        ],
-    );
-
-    // 添加所有建筑到树中
-    tree.add_building(library).unwrap();
-    tree.add_building(alchemy_room).unwrap();
-    tree.add_building(training_ground).unwrap();
-    tree.add_building(heavenly_pavilion).unwrap();
-    tree.add_building(spirit_garden).unwrap();
-    tree.add_building(weapon_forge).unwrap();
-    tree.add_building(heritage_hall).unwrap();
-    tree.add_building(spirit_array).unwrap();
-    tree.add_building(protection_array).unwrap();
+            if let Err(e) = tree.add_building(building) {
+                eprintln!("添加建筑 {} 失败: {}", bc.name, e);
+            }
+        }
+    }
 
     tree
+}
+
+/// 创建默认的修仙宗门建筑树（兼容旧代码）
+#[deprecated(note = "请使用 create_sect_building_tree() 代替")]
+pub fn create_default_sect_building_tree() -> BuildingTree {
+    create_sect_building_tree()
 }
 
 #[cfg(test)]

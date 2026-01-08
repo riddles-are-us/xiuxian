@@ -77,7 +77,7 @@ impl InteractiveGame {
         let mut sect = Sect::new(sect_name);
 
         // 初始化建筑树
-        let building_tree = crate::building::create_default_sect_building_tree();
+        let building_tree = crate::building::create_sect_building_tree();
         sect.init_building_tree(building_tree);
 
         let mut game = Self {

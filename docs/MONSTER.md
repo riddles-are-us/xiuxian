@@ -142,17 +142,33 @@
 
 ## 相关配置
 
-怪物生成配置位于 `config/game_config.json`：
+怪物生成配置位于 `config/monsters.json`：
 
 ```json
 {
-  "monsters": [
+  "monster_templates": [
     {
       "name": "噬魂虎",
-      "base_level": 2,
-      "growth_rate": 0.15,
-      "spawn_weight": 1.0
+      "level": 2,
+      "is_demon": false,
+      "growth_rate": 0.1,
+      "position": { "x": 8, "y": 12 },
+      "task_templates": [
+        {
+          "name_template": "讨伐{name}",
+          "task_type": "Combat",
+          "progress_reward": 15,
+          "resource_reward": 40,
+          "reputation_reward": 25,
+          "dao_heart_impact": 3
+        }
+      ]
     }
-  ]
+  ],
+  "spawn_rules": {
+    "spawn_chance": 0.2,
+    "level_range": [1, 5],
+    "random_names": ["妖兽", "魔狼", "邪灵", "凶兽"]
+  }
 }
 ```
