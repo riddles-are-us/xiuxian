@@ -32,6 +32,7 @@ pub enum TerrainType {
 pub struct Terrain {
     pub terrain_type: TerrainType,
     pub name: String,
+    pub variant_type: Option<String>,  // "mountain1", "mountain2", "mountain3", "mountain4", "river"
 }
 
 /// 地图坐标
@@ -45,13 +46,20 @@ pub struct Position {
 #[derive(Debug, Clone)]
 pub struct PositionedElement {
     pub element: MapElement,
-    pub position: Position,
-    pub size: Option<(u32, u32)>,  // (width, height)，None 表示 1x1
+    pub position: Position,  // core_position
+    pub size: Option<(u32, u32)>,  // (width, height)，None 表示 1x1 (for backward compatibility)
+    pub positions: Option<Vec<Position>>,  // Explicit list of all positions this element occupies
 }
 
 impl PositionedElement {
     /// 检查坐标是否在此元素的范围内
     pub fn contains_position(&self, x: i32, y: i32) -> bool {
+        // Use explicit positions if available
+        if let Some(ref positions) = self.positions {
+            return positions.iter().any(|p| p.x == x && p.y == y);
+        }
+
+        // Fallback to rectangular check
         let (width, height) = self.size.unwrap_or((1, 1));
         x >= self.position.x && x < self.position.x + width as i32 &&
         y >= self.position.y && y < self.position.y + height as i32
@@ -59,6 +67,12 @@ impl PositionedElement {
 
     /// 获取元素占据的所有位置
     pub fn get_all_positions(&self) -> Vec<Position> {
+        // Prioritize explicit positions if provided
+        if let Some(ref positions) = self.positions {
+            return positions.clone();
+        }
+
+        // Fallback to size-based rectangular calculation
         let (width, height) = self.size.unwrap_or((1, 1));
         let mut positions = Vec::new();
         for dx in 0..width {
@@ -736,6 +750,12 @@ impl GameMap {
             }
         }
 
+        // 使用静态地图生成
+        self.generate_static_map();
+
+        /*
+        // ===== 动态地图生成逻辑（已注释）=====
+
         // 生成基础地形元素
         self.generate_terrain();
 
@@ -748,6 +768,7 @@ impl GameMap {
                     y: village_template.position.y,
                 },
                 size: village_template.size.as_ref().map(|s| (s.width, s.height)),
+                positions: None,
             });
         }
 
@@ -760,6 +781,7 @@ impl GameMap {
                     y: faction_template.position.y,
                 },
                 size: faction_template.size.as_ref().map(|s| (s.width, s.height)),
+                positions: None,
             });
         }
 
@@ -774,6 +796,7 @@ impl GameMap {
                     y: dangerous_template.position.y,
                 },
                 size: dangerous_template.size.as_ref().map(|s| (s.width, s.height)),
+                positions: None,
             });
         }
 
@@ -786,6 +809,7 @@ impl GameMap {
                     y: realm_template.position.y,
                 },
                 size: realm_template.size.as_ref().map(|s| (s.width, s.height)),
+                positions: None,
             });
         }
 
@@ -799,8 +823,162 @@ impl GameMap {
                         y: pos.y,
                     },
                     size: None,  // 妖魔不支持大尺寸
+                    positions: None,
                 });
             }
+        }
+
+        // 生成初始草药（3-5个）
+        self.spawn_initial_herbs();
+
+        // ===== 动态地图生成逻辑结束 =====
+        */
+    }
+
+    /// 生成静态地图（基于预定义数据）
+    fn generate_static_map(&mut self) {
+        // 添加势力（Faction - 天剑门）
+        if let Some(faction_template) = self.config.map_elements.factions.first() {
+            self.elements.push(PositionedElement {
+                element: MapElement::Faction(Faction::from_template(faction_template)),
+                position: Position { x: 9, y: 9 },  // core_position
+                size: None,
+                positions: Some(vec![
+                    Position { x: 9, y: 9 },
+                    Position { x: 10, y: 9 },
+                    Position { x: 9, y: 10 },
+                    Position { x: 10, y: 10 },
+                ]),
+            });
+        }
+
+        // === 河流 1 - 每个格子单独一个元素 ===
+        let river_1_positions = vec![
+            (14, 5), (13, 5), (12, 5), (12, 4), (12, 3),
+            (11, 3), (10, 3), (9, 3), (9, 4), (9, 5), (9, 7),
+        ];
+        for (x, y) in river_1_positions {
+            self.elements.push(PositionedElement {
+                element: MapElement::Terrain(Terrain {
+                    terrain_type: TerrainType::Water,
+                    name: "河流".to_string(),
+                    variant_type: Some("river".to_string()),
+                }),
+                position: Position { x, y },
+                size: None,
+                positions: Some(vec![Position { x, y }]),
+            });
+        }
+
+        // === 河流 2 - 每个格子单独一个元素 ===
+        let river_2_positions = vec![
+            (5, 6), (5, 7), (5, 8), (6, 8), (6, 9), (6, 10),
+            (7, 10), (8, 10), (5, 10), (4, 10),
+        ];
+        for (x, y) in river_2_positions {
+            self.elements.push(PositionedElement {
+                element: MapElement::Terrain(Terrain {
+                    terrain_type: TerrainType::Water,
+                    name: "河流".to_string(),
+                    variant_type: Some("river".to_string()),
+                }),
+                position: Position { x, y },
+                size: None,
+                positions: Some(vec![Position { x, y }]),
+            });
+        }
+
+        // === 山脉 ===
+        // mountain1 - single tile mountains
+        let mountain1_positions = vec![
+            vec![Position { x: 5, y: 4 }],
+            vec![Position { x: 3, y: 8 }],
+            vec![Position { x: 5, y: 9 }],
+            vec![Position { x: 7, y: 15 }],
+            vec![Position { x: 11, y: 13 }],
+            vec![Position { x: 12, y: 11 }],
+            vec![Position { x: 14, y: 7 }],
+        ];
+        for positions in mountain1_positions {
+            self.elements.push(PositionedElement {
+                element: MapElement::Terrain(Terrain {
+                    terrain_type: TerrainType::Mountain,
+                    name: "山峰".to_string(),
+                    variant_type: Some("mountain1".to_string()),
+                }),
+                position: positions[0],
+                size: None,
+                positions: Some(positions),
+            });
+        }
+
+        // mountain2 - single tile mountains
+        let mountain2_positions = vec![
+            vec![Position { x: 10, y: 7 }],
+            vec![Position { x: 3, y: 11 }],
+            vec![Position { x: 2, y: 10 }],
+            vec![Position { x: 10, y: 14 }],
+            vec![Position { x: 15, y: 10 }],
+            vec![Position { x: 14, y: 6 }],
+            vec![Position { x: 15, y: 7 }],
+        ];
+        for positions in mountain2_positions {
+            self.elements.push(PositionedElement {
+                element: MapElement::Terrain(Terrain {
+                    terrain_type: TerrainType::Mountain,
+                    name: "山峰".to_string(),
+                    variant_type: Some("mountain2".to_string()),
+                }),
+                position: positions[0],
+                size: None,
+                positions: Some(positions),
+            });
+        }
+
+        // mountain3 - vertical (1x2) mountains
+        let mountain3_positions = vec![
+            vec![Position { x: 7, y: 7 }, Position { x: 7, y: 8 }],
+            vec![Position { x: 4, y: 4 }, Position { x: 4, y: 5 }],
+            vec![Position { x: 4, y: 12 }, Position { x: 4, y: 13 }],
+            vec![Position { x: 2, y: 7 }, Position { x: 2, y: 8 }],
+            vec![Position { x: 7, y: 12 }, Position { x: 7, y: 13 }],
+            vec![Position { x: 13, y: 11 }, Position { x: 13, y: 12 }],
+            vec![Position { x: 15, y: 8 }, Position { x: 15, y: 9 }],
+            vec![Position { x: 16, y: 8 }, Position { x: 16, y: 9 }],
+        ];
+        for positions in mountain3_positions {
+            self.elements.push(PositionedElement {
+                element: MapElement::Terrain(Terrain {
+                    terrain_type: TerrainType::Mountain,
+                    name: "山峰".to_string(),
+                    variant_type: Some("mountain3".to_string()),
+                }),
+                position: positions[0],
+                size: None,
+                positions: Some(positions),
+            });
+        }
+
+        // mountain4 - horizontal (2x1) mountains
+        let mountain4_positions = vec![
+            vec![Position { x: 3, y: 6 }, Position { x: 4, y: 6 }],
+            vec![Position { x: 2, y: 9 }, Position { x: 3, y: 9 }],
+            vec![Position { x: 7, y: 14 }, Position { x: 8, y: 14 }],
+            vec![Position { x: 8, y: 15 }, Position { x: 9, y: 15 }],
+            vec![Position { x: 10, y: 12 }, Position { x: 11, y: 12 }],
+            vec![Position { x: 11, y: 14 }, Position { x: 12, y: 14 }],
+        ];
+        for positions in mountain4_positions {
+            self.elements.push(PositionedElement {
+                element: MapElement::Terrain(Terrain {
+                    terrain_type: TerrainType::Mountain,
+                    name: "山峰".to_string(),
+                    variant_type: Some("mountain4".to_string()),
+                }),
+                position: positions[0],
+                size: None,
+                positions: Some(positions),
+            });
         }
 
         // 生成初始草药（3-5个）
@@ -828,6 +1006,7 @@ impl GameMap {
                     element: MapElement::Herb(Herb::new_random()),
                     position: Position { x, y },
                     size: None,
+                    positions: None,
                 });
             }
         }
@@ -856,9 +1035,11 @@ impl GameMap {
                 element: MapElement::Terrain(Terrain {
                     terrain_type: *terrain_type,
                     name: name.to_string(),
+                    variant_type: None,  // Dynamic terrain doesn't specify variant
                 }),
                 position: Position { x, y },
                 size: None,
+                positions: None,
             });
         }
     }
@@ -952,6 +1133,7 @@ impl GameMap {
                     element: MapElement::Monster(Monster::new(name, level, task_templates)),
                     position: Position { x, y },
                     size: None,
+                    positions: None,
                 });
             }
         }
@@ -979,6 +1161,7 @@ impl GameMap {
                     element: MapElement::Herb(Herb::new_random()),
                     position: Position { x, y },
                     size: None,
+                    positions: None,
                 });
             }
         }

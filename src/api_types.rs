@@ -448,7 +448,7 @@ pub enum MapElementDetails {
     DangerousLocation { danger_level: u32 },
     SecretRealm { realm_type: String, difficulty: u32, under_attack: Option<AttackInfo> },
     Monster { monster_id: String, level: u32, is_demon: bool, growth_rate: f64, invading_location: Option<String> },
-    Terrain { terrain_type: String },
+    Terrain { terrain_type: String, variant_type: Option<String> },
     Herb { herb_id: String, quality: String, growth_stage: u32, max_growth: u32, is_mature: bool },
 }
 

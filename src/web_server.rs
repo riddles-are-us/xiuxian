@@ -1343,6 +1343,7 @@ async fn get_map(
                         t.name.clone(),
                         MapElementDetails::Terrain {
                             terrain_type: format!("{:?}", t.terrain_type),
+                            variant_type: t.variant_type.clone(),
                         },
                     ),
                     MapElement::Herb(h) => (
