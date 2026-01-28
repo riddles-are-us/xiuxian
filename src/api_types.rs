@@ -424,6 +424,7 @@ pub struct MapElementDto {
     pub name: String,
     pub position: PositionDto,
     pub size: Option<SizeDto>,  // 建筑尺寸，None 表示 1x1
+    pub positions: Option<Vec<PositionDto>>,  // 元素占据的所有位置（用于山脉等不规则地形）
     pub details: MapElementDetails,
 }
 

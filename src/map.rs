@@ -1634,6 +1634,50 @@ impl GameMap {
     pub fn is_sect_under_attack(&self) -> bool {
         self.sect_invasion.is_some()
     }
+
+    /// 检查指定位置是否可通行
+    /// 山脉和水域是不可通行的
+    pub fn is_passable(&self, x: i32, y: i32) -> bool {
+        // 检查是否在地图范围内
+        if x < 0 || x >= self.width || y < 0 || y >= self.height {
+            return false;
+        }
+
+        // 检查该位置是否有不可通行的地形
+        for positioned in &self.elements {
+            // 检查该元素是否占据目标位置
+            if let Some(ref positions) = positioned.positions {
+                // 使用explicit positions检查
+                if positions.iter().any(|p| p.x == x && p.y == y) {
+                    // 如果是山脉或水域，则不可通行
+                    if let MapElement::Terrain(terrain) = &positioned.element {
+                        match terrain.terrain_type {
+                            TerrainType::Mountain | TerrainType::Water => return false,
+                            _ => {}
+                        }
+                    }
+                }
+            } else {
+                // Fallback：使用size-based检查
+                let (width, height) = positioned.size.unwrap_or((1, 1));
+                let in_range = x >= positioned.position.x
+                    && x < positioned.position.x + width as i32
+                    && y >= positioned.position.y
+                    && y < positioned.position.y + height as i32;
+
+                if in_range {
+                    if let MapElement::Terrain(terrain) = &positioned.element {
+                        match terrain.terrain_type {
+                            TerrainType::Mountain | TerrainType::Water => return false,
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        }
+
+        true
+    }
 }
 
 /// 辅助函数：解析任务类型

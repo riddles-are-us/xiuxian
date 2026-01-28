@@ -607,6 +607,20 @@ async fn move_disciple(
                 );
             }
 
+            // 检查目标位置是否可通行
+            if !game.map.is_passable(req.x, req.y) {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(ApiResponse::<MoveDiscipleResponse>::error(
+                        "POSITION_BLOCKED".to_string(),
+                        format!(
+                            "目标位置 ({}, {}) 不可通行！该位置可能是山脉或水域",
+                            req.x, req.y
+                        ),
+                    )),
+                );
+            }
+
             // 更新弟子位置和移动距离
             if let Some(disciple) = game.sect.disciples.iter_mut().find(|d| d.id == disciple_id) {
                 disciple.moves_remaining -= distance;
@@ -1367,6 +1381,9 @@ async fn get_map(
                         y: positioned.position.y,
                     },
                     size: positioned.size.map(|(w, h)| SizeDto { width: w, height: h }),
+                    positions: positioned.positions.as_ref().map(|positions| {
+                        positions.iter().map(|p| PositionDto { x: p.x, y: p.y }).collect()
+                    }),
                     details,
                 }
             })
