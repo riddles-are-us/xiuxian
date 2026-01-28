@@ -622,11 +622,14 @@ async fn move_disciple(
             }
 
             // 更新弟子位置和移动距离
-            if let Some(disciple) = game.sect.disciples.iter_mut().find(|d| d.id == disciple_id) {
+            let moves_remaining = if let Some(disciple) = game.sect.disciples.iter_mut().find(|d| d.id == disciple_id) {
                 disciple.moves_remaining -= distance;
                 let new_position = crate::map::Position { x: req.x, y: req.y };
                 disciple.move_to(new_position);
-            }
+                disciple.moves_remaining
+            } else {
+                0  // 如果找不到弟子，返回0（理论上不会发生）
+            };
 
             // 检查并采集草药
             let mut collected_herb: Option<CollectedHerbInfo> = None;
@@ -668,6 +671,7 @@ async fn move_disciple(
                 disciple_name,
                 old_position,
                 new_position: new_position_dto,
+                moves_remaining,
                 collected_herb,
             };
 
