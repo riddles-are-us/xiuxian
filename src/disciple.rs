@@ -156,7 +156,7 @@ impl Disciple {
             relationships: Vec::new(),
             children: Vec::new(),
             modifiers: ModifierStack::new(),
-            position: Position { x: 9, y: 8 }, // 初始位置在宗门
+            position: Position { x: 8, y: 9 }, // 初始位置在宗门
             moves_remaining: movement_range, // 初始化为移动范围
         }
     }
