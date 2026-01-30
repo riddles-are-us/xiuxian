@@ -424,6 +424,7 @@ pub struct MapElementDto {
     pub name: String,
     pub position: PositionDto,
     pub size: Option<SizeDto>,  // 建筑尺寸，None 表示 1x1
+    pub positions: Option<Vec<PositionDto>>,  // 元素占据的所有位置（用于山脉等不规则地形）
     pub details: MapElementDetails,
 }
 
@@ -609,6 +610,7 @@ pub struct MoveDiscipleResponse {
     pub disciple_name: String,
     pub old_position: PositionDto,
     pub new_position: PositionDto,
+    pub moves_remaining: u32,  // 移动后剩余的移动距离
     pub collected_herb: Option<CollectedHerbInfo>,
 }
 

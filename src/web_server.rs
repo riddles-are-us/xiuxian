@@ -607,12 +607,29 @@ async fn move_disciple(
                 );
             }
 
+            // 检查目标位置是否可通行
+            if !game.map.is_passable(req.x, req.y) {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(ApiResponse::<MoveDiscipleResponse>::error(
+                        "POSITION_BLOCKED".to_string(),
+                        format!(
+                            "目标位置 ({}, {}) 不可通行！该位置可能是山脉或水域",
+                            req.x, req.y
+                        ),
+                    )),
+                );
+            }
+
             // 更新弟子位置和移动距离
-            if let Some(disciple) = game.sect.disciples.iter_mut().find(|d| d.id == disciple_id) {
+            let moves_remaining = if let Some(disciple) = game.sect.disciples.iter_mut().find(|d| d.id == disciple_id) {
                 disciple.moves_remaining -= distance;
                 let new_position = crate::map::Position { x: req.x, y: req.y };
                 disciple.move_to(new_position);
-            }
+                disciple.moves_remaining
+            } else {
+                0  // 如果找不到弟子，返回0（理论上不会发生）
+            };
 
             // 检查并采集草药
             let mut collected_herb: Option<CollectedHerbInfo> = None;
@@ -654,6 +671,7 @@ async fn move_disciple(
                 disciple_name,
                 old_position,
                 new_position: new_position_dto,
+                moves_remaining,
                 collected_herb,
             };
 
@@ -1367,6 +1385,9 @@ async fn get_map(
                         y: positioned.position.y,
                     },
                     size: positioned.size.map(|(w, h)| SizeDto { width: w, height: h }),
+                    positions: positioned.positions.as_ref().map(|positions| {
+                        positions.iter().map(|p| PositionDto { x: p.x, y: p.y }).collect()
+                    }),
                     details,
                 }
             })

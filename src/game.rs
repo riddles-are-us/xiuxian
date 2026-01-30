@@ -35,7 +35,7 @@ impl Game {
         };
 
         // 初始招募几个弟子
-        for _ in 0..3 {
+        for _ in 0..1 {
             let disciple = game.recruitment_system.generate_random_disciple();
             let id = disciple.id;
             game.sect.recruit_disciple(disciple);

@@ -92,8 +92,8 @@ impl InteractiveGame {
             pending_recruitment: None,
         };
 
-        // 初始招募3个弟子
-        for _ in 0..3 {
+        // 初始招募1个弟子
+        for _ in 0..1 {
             let disciple = game.recruitment_system.generate_random_disciple();
             game.sect.recruit_disciple(disciple);
         }
